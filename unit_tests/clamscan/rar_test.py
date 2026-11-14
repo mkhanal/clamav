@@ -1,0 +1,216 @@
+# Copyright (C) 2026 Mridul Khanal. All rights reserved.
+
+"""
+Run clamscan RAR tests.
+
+The same expectations hold for both RAR backends (RARLAB unRAR and
+libarchive), except where noted: every expected hash below is what unRAR
+extracts.
+"""
+
+import os
+import shutil
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+import testcase
+
+MARKER = b'ClamAV-RAR-backend-test-marker-6f1c2e'
+
+# Archive -> what every entry must extract to: (size, SHA-256).
+EXTRACTED = {
+    # RAR 1.5 and RAR 2.0 / 2.6 compression, including multimedia (audio)
+    # blocks and solid streams.
+    'rar15-small.rar': [
+        (302, '6905378fc71be9665755071e77d712963f14a9e3ccab8a62fb30d42023ba8947')],
+    'rar15-solid.rar': [
+        (6002, '18c49e88aca59a47bbf4f9f773ddd1e7ff6554de06964b23fb0e98cbf8dd31b2'),
+        (5004, 'c55d6dcbbd23bb2ba40e95afd05fe54050a0cabf8e024b7d9452cc4d83b822f5'),
+        (3089, '5e4faafd9828d55b42d887e992cf84125a5b39154955f09c1f44625cc0c8a745')],
+    'rar15-rar20-solid.rar': [
+        (4001, '0ae02de111812f78bede44113962aa88c9634ec3d6d087a4b5a06f6f22a10e2d'),
+        (6000, '3a4be01ed3ebfe1169661947d6e0c690afd41d79bfd83a36187edc5c89ae323f')],
+    'rar20-lz-text.rar': [
+        (20000, '8f026544474ace34d7c3c1744620611d32f9eb9d533521f948f1c9f75367538e')],
+    'rar20-audio-1ch.rar': [
+        (6000, 'ad1d689c1feca9b72b958fc9d07cf91b0c659ee4c6b1bc41b7b17f0f0fc2a9bf')],
+    'rar20-audio-4ch.rar': [
+        (6000, '081202b2c7e6e24cee2ffe0c106f2167f742d89bb8253bc96c8471d6e8e0d176')],
+    'rar20-block-switches.rar': [
+        (12000, '2e073b467b48ed65da8cc07906a96c4b069b1060808f2fe9c5c6a3183dde8000')],
+    'rar20-solid.rar': [
+        (4000, '3b18236852cb7dd43d027e87b7e11ca793e4a608df15f09a9bbb5a119af652c3'),
+        (3000, '8733a7dae580602b5bbf2c199265f5bf884ea542618801372c1bd5ac7b03ac2c'),
+        (3500, '445ec62ce9e27c9f752dddc1d906350720012014261072dee5dc7cec435a0cd9')],
+    'rar26-lz-audio.rar': [
+        (9998, 'f0bc83e91397965891393014c78cf130fa4a6265e9aa2e3d5fe5644e57018c9c')],
+    # RAR 2.9 (RAR 3.x / 4.x format) standard filters, and a filter over
+    # PPMd-coded data.
+    'rar4-filter-e8.rar': [
+        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+    'rar4-filter-e8e9.rar': [
+        (8000, '815934886151360cff53369052cab8be55fcdca7168f88cdfcd29481628305d6')],
+    'rar4-filter-delta.rar': [
+        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
+    'rar4-filter-rgb.rar': [
+        (18486, '1981c9d2d85226d003f413b0fbf13733b33a2aa151b03c6c281aa6d8aa9ac9e8')],
+    'rar4-filter-audio.rar': [
+        (48044, '6ce068910efc77af2d618bf035c6348b13d9fcf828bf3e69b5d068b55a530ab3')],
+    'rar4-filter-itanium.rar': [
+        (11200, '6b7a6404e2e03a3e5fc8d512f3ac85c9a5f18f0b590011077840c829d44798c4')],
+    'rar4-ppmd-e8.rar': [
+        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+    # RAR5 filters.
+    'rar5-filter-delta.rar': [
+        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
+    'rar5-filter-e8.rar': [
+        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+}
+
+
+class TC(testcase.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super(TC, cls).setUpClass()
+
+        cls.backend = os.getenv('UNRAR_BACKEND', 'none')
+        cls.path_rar = TC.path_source / 'unit_tests' / 'input' / 'other_scanfiles' / 'rar'
+
+        cls.path_marker_db = TC.path_tmp / 'rar-marker.ndb'
+        cls.path_marker_db.write_text('RAR_TEST_MARKER:0:*:{}\n'.format(MARKER.hex()))
+
+        # Matches only at the start of a scanned object, so not in the raw
+        # archive: proves the comment was handed to the scanner on its own.
+        cls.path_marker_start_db = TC.path_tmp / 'rar-marker-start.ndb'
+        cls.path_marker_start_db.write_text('RAR_TEST_MARKER_AT_START:0:0:{}\n'.format(MARKER.hex()))
+
+    @classmethod
+    def tearDownClass(cls):
+        super(TC, cls).tearDownClass()
+
+    def setUp(self):
+        super(TC, self).setUp()
+        if TC.backend == 'none':
+            self.skipTest('Built without RAR support')
+
+    def tearDown(self):
+        super(TC, self).tearDown()
+        self.verify_valgrind_log()
+
+    def scan(self, testfile, options='', path_db=None):
+        if path_db is None:
+            path_db = TC.path_marker_db
+
+        command = '{valgrind} {valgrind_args} {clamscan} {options} -d {path_db} {testfile}'.format(
+            valgrind=TC.valgrind,
+            valgrind_args=TC.valgrind_args,
+            clamscan=TC.clamscan,
+            options=options,
+            path_db=path_db,
+            testfile=testfile,
+        )
+        return self.execute_command(command)
+
+    def test_every_compression_version_and_filter_extracts_exactly(self):
+        self.step_name('Test RAR 1.5, 2.0, 2.6, 2.9 filters and RAR5 filters extract byte for byte')
+
+        for archive, entries in EXTRACTED.items():
+            with self.subTest(archive=archive):
+                path_db = TC.path_tmp / (archive + '.hsb')
+                path_db.write_text(''.join(
+                    '{}:{}:RAR_ENTRY_{}\n'.format(sha256, size, index)
+                    for index, (size, sha256) in enumerate(entries)))
+
+                output = self.scan(TC.path_rar / archive, '--allmatch', path_db=path_db)
+
+                assert output.ec == 1  # virus
+                self.verify_output(output.out, expected=[
+                    'RAR_ENTRY_{}.UNOFFICIAL FOUND'.format(index) for index in range(len(entries))])
+
+    def test_solid_ppmd_stream_continues_across_entries(self):
+        self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
+
+        testfile = TC.path_rar / 'rar4-solid-ppmd.rar'
+        output = self.scan(testfile)
+
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile)])
+
+    def test_solid_entry_after_a_skipped_entry(self):
+        self.step_name('Test the entry after one skipped for size in a solid archive')
+
+        # big.txt exceeds --max-filesize and is skipped; marker.txt follows
+        # it in the same solid stream. unRAR skips without decoding, so it
+        # decodes marker.txt from the wrong window and misses the marker.
+        # The libarchive backend decodes what it skips.
+        for archive in ('rar4-solid-skip.rar', 'rar5-solid-skip.rar'):
+            with self.subTest(archive=archive):
+                testfile = TC.path_rar / archive
+                output = self.scan(testfile, '--max-filesize=1M --max-scansize=10M')
+
+                if TC.backend == 'rarlab':
+                    assert output.ec == 0  # clean
+                    self.verify_output(output.out, expected=['{}: OK'.format(testfile)])
+                else:
+                    assert output.ec == 1  # virus
+                    self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile)])
+
+    def test_archive_comment_is_scanned(self):
+        self.step_name('Test RAR 2.9 (packed) and RAR5 archive comments are scanned')
+
+        for archive in ('rar4-comment.rar', 'rar5-comment.rar'):
+            with self.subTest(archive=archive):
+                testfile = TC.path_rar / archive
+                output = self.scan(testfile, path_db=TC.path_marker_start_db)
+
+                assert output.ec == 1  # virus
+                self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER_AT_START.UNOFFICIAL FOUND'.format(testfile)])
+
+    def test_encrypted_data_and_headers(self):
+        self.step_name('Test encrypted entries and encrypted headers alert as encrypted archives')
+
+        for archive in ('rar4-encrypted-data.rar', 'rar4-encrypted-headers.rar',
+                        'rar5-encrypted-data.rar', 'rar5-encrypted-headers.rar'):
+            with self.subTest(archive=archive):
+                testfile = TC.path_rar / archive
+
+                output = self.scan(testfile, '--alert-encrypted-archive=yes')
+                assert output.ec == 1  # virus
+                self.verify_output(output.out, expected=['{}: Heuristics.Encrypted.RAR FOUND'.format(testfile)])
+
+                output = self.scan(testfile)
+                assert output.ec == 0  # clean
+                self.verify_output(output.out, expected=['{}: OK'.format(testfile)])
+
+    def test_volume_set_is_read_across_volumes(self):
+        self.step_name('Test a file split across volumes is scanned when the next volume is present')
+
+        for prefix in ('rar4-volume', 'rar5-volume'):
+            with self.subTest(volumes=prefix):
+                path_set = TC.path_tmp / (prefix + '-set')
+                path_set.mkdir()
+                for part in ('part1', 'part2'):
+                    shutil.copy(str(TC.path_rar / '{}.{}.rar'.format(prefix, part)), str(path_set))
+                testfile = path_set / (prefix + '.part1.rar')
+
+                output = self.scan(testfile)
+                assert output.ec == 1  # virus
+                self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile)])
+
+    def test_lone_volume(self):
+        self.step_name('Test the first volume alone: a file split into the missing volume is not scanned')
+
+        # As with unRAR: extracting the split file fails with a volume open
+        # error, libclamav does not scan the partial file and stops reading
+        # the archive.
+        for prefix in ('rar4-volume', 'rar5-volume'):
+            with self.subTest(volumes=prefix):
+                path_lone = TC.path_tmp / (prefix + '-lone')
+                path_lone.mkdir()
+                shutil.copy(str(TC.path_rar / (prefix + '.part1.rar')), str(path_lone))
+                testfile = path_lone / (prefix + '.part1.rar')
+
+                output = self.scan(testfile)
+                assert output.ec == 0  # clean
+                self.verify_output(output.out, expected=['{}: OK'.format(testfile)])
