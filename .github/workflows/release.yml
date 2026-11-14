@@ -1,9 +1,9 @@
-name: Release source tarball
+name: ClamCove Release
 
 on:
   push:
     tags:
-      - "clamav-*-mk.*"
+      - "clamcove-*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -30,11 +30,12 @@ jobs:
 
       - name: Resolve the version
         run: |
-          if [[ ! "$TAG" =~ ^clamav-([0-9]+\.[0-9]+\.[0-9]+)-mk\.([0-9]+)$ ]]; then
-            echo "tag $TAG is not clamav-<version>-mk.<n>"; exit 1
+          if [[ ! "$TAG" =~ ^clamcove-([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)$ ]]; then
+            echo "tag $TAG is not clamcove-<clamav version>-<n>"; exit 1
           fi
           echo "VERSION=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
-          echo "OUT=clamav-${BASH_REMATCH[1]}-mk.${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
+          echo "OUT=clamcove-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
+          echo "REV=${BASH_REMATCH[1]}-${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
           git rev-parse --verify --quiet "clamav-${BASH_REMATCH[1]}^{commit}" > /dev/null \
             || { echo "upstream tag clamav-${BASH_REMATCH[1]} is not in this repository"; exit 1; }
 
@@ -76,7 +77,45 @@ jobs:
       - name: Attach to the release
         run: |
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "ClamAV $VERSION ${TAG##*-} (mk)" \
-              --notes "Complete corresponding source: the official clamav-$VERSION.tar.gz with the changes of tag $TAG applied. SHA-256 in $OUT.tar.gz.sha256."
+            gh release create "$TAG" --verify-tag --title "ClamCove $REV" \
+              --notes "ClamCove $REV, based on ClamAV $VERSION. Complete corresponding source: the official clamav-$VERSION.tar.gz with the changes of tag $TAG applied (SHA-256 in $OUT.tar.gz.sha256). Container image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV. Not affiliated with or endorsed by Cisco or the ClamAV project."
           fi
           gh release upload "$TAG" "dist/$OUT.tar.gz" "dist/$OUT.tar.gz.sha256"
+
+  image:
+    name: container image
+    needs: source-tarball
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch the released tarball and verify it
+        run: |
+          [[ "$TAG" =~ ^clamcove-([0-9]+\.[0-9]+\.[0-9]+-[0-9]+)$ ]]
+          REV=${BASH_REMATCH[1]}
+          echo "REV=$REV" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/dl" "$RUNNER_TEMP/ctx"
+          gh release download "$TAG" --pattern "$TAG.tar.gz*" --dir "$RUNNER_TEMP/dl"
+          (cd "$RUNNER_TEMP/dl" && sha256sum -c "$TAG.tar.gz.sha256")
+          tar -xzf "$RUNNER_TEMP/dl/$TAG.tar.gz" -C "$RUNNER_TEMP/ctx" --strip-components=1
+
+      - name: Build
+        run: |
+          docker build -f .github/release/Dockerfile -t "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV" "$RUNNER_TEMP/ctx"
+
+      - name: Smoke test
+        run: |
+          out=$(docker run --rm "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV" clamscan --version)
+          echo "$out"
+          case "$out" in ClamAV\ *) ;; *) exit 1 ;; esac
+
+      - name: Push
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV"
