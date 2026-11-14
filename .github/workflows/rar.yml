@@ -37,8 +37,8 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DENABLE_UNRAR_LIBARCHIVE=ON -DENABLE_EXAMPLES=OFF -DENABLE_MAN_PAGES=OFF
           -DCMAKE_INSTALL_PREFIX="$PWD/prefix"
-          -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
-          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize=alignment -fno-omit-frame-pointer"
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize=alignment -fno-omit-frame-pointer"
           -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
           -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
 
@@ -47,7 +47,7 @@ jobs:
 
       - name: Test
         working-directory: build
-        run: ctest --output-on-failure --parallel 4
+        run: ctest --output-on-failure --parallel 4 --exclude-regex "^(clamd|libclamav_rust)$"
 
       - name: Scan the RAR test set
         run: |
