@@ -41,7 +41,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends bison flex check libbz2-dev libcurl4-openssl-dev \
-            libjson-c-dev libncurses-dev libpcre2-dev libssl-dev libxml2-dev pkg-config python3-pytest zlib1g-dev
+            libjson-c-dev libmilter-dev libncurses-dev libpcre2-dev libssl-dev libxml2-dev pkg-config python3-pytest zlib1g-dev
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
