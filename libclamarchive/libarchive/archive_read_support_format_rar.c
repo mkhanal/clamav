@@ -43,6 +43,7 @@
 #include "archive_integer.h"
 #include "archive_ppmd7_private.h"
 #include "archive_private.h"
+#include "archive_rar_unpack1520.h"
 #include "archive_read_private.h"
 #include "archive_read_rar_info.h"
 
@@ -343,6 +344,11 @@ struct rar
   size_t nodes;
   char filename_must_match;
 
+  /* RAR 1.5 / 2.0 decoder (unpack versions 15, 20 and 26) */
+  int unp_ver;
+  struct rar_unpack1520 *unpack1520;
+  int unpack1520_active;
+
   /* LZSS members */
   struct huffman_code maincode;
   struct huffman_code offsetcode;
@@ -437,6 +443,8 @@ static int read_symlink_stored(struct archive_read *, struct archive_entry *,
                                struct archive_string_conv *);
 static int read_data_stored(struct archive_read *, const void **, size_t *,
                             int64_t *);
+static int read_data_unpack1520(struct archive_read *, const void **,
+  size_t *, int64_t *);
 static int read_data_compressed(struct archive_read *, const void **, size_t *,
                                 int64_t *, size_t);
 static int rar_br_preparation(struct archive_read *, struct rar_br *);
@@ -1143,6 +1151,21 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
       rar->bytes_unconsumed = 0;
   }
 
+  /*
+   * Unpack versions 13 to 28 are RAR 1.5 / 2.0 data; unRAR rejects
+   * compressed entries of versions below 13 or above 29.
+   */
+  if (rar->compression_method >= COMPRESS_METHOD_FASTEST &&
+      rar->compression_method <= COMPRESS_METHOD_BEST) {
+    if (rar->unp_ver >= 13 && rar->unp_ver <= 28)
+      return (read_data_unpack1520(a, buff, size, offset));
+    if (rar->unp_ver < 13 || rar->unp_ver > 29) {
+      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                        "Unsupported RAR unpack version %d", rar->unp_ver);
+      return (ARCHIVE_FAILED);
+    }
+  }
+
   *buff = NULL;
   if (rar->entry_eof || rar->offset_seek >= rar->unp_size) {
     *size = 0;
@@ -1404,6 +1427,7 @@ archive_read_format_rar_cleanup(struct archive_read *a)
   free(rar->lzss.window);
   free(rar->info_name);
   free(rar->comment_data);
+  rar_unpack1520_free(rar->unpack1520);
   __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
   free(rar);
   a->format->data = NULL;
@@ -1619,6 +1643,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   p += sizeof(file_header);
 
   rar->compression_method = file_header.method;
+  rar->unp_ver = (unsigned char)file_header.unp_ver;
 
   ttime = archive_le32dec(file_header.file_time);
   rar->mtime = get_time(ttime);
@@ -2055,6 +2080,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   rar->br.next_in = NULL;
   rar->crc_calculated = 0;
   rar->entry_eof = 0;
+  rar->unpack1520_active = 0;
   rar->valid = 1;
   free(rar->unp_buffer);
   rar->unp_buffer = NULL;
@@ -2280,6 +2306,114 @@ read_data_stored(struct archive_read *a, const void **buff, size_t *size,
   rar->crc_calculated = __archive_crc32(rar->crc_calculated, *buff,
     (unsigned)bytes_avail);
   return (ARCHIVE_OK);
+}
+
+/*
+ * Supplies packed data to the RAR 1.5 / 2.0 decoder, crossing into the next
+ * volume for a split entry like rar_read_ahead() does.
+ */
+static int
+unpack1520_read_packed(void *ctx, size_t want, const uint8_t **buf,
+                       size_t *avail)
+{
+  struct archive_read *a = ctx;
+  struct rar *rar = a->format->data;
+  ssize_t bytes_avail;
+  const void *h;
+
+  if (rar->bytes_unconsumed > 0) {
+    __archive_read_consume(a, rar->bytes_unconsumed);
+    rar->bytes_unconsumed = 0;
+  }
+  *buf = NULL;
+  *avail = 0;
+  if (rar->bytes_remaining == 0 &&
+      !(rar->main_flags & MHD_VOLUME && rar->file_flags & FHD_SPLIT_AFTER))
+    return (0);
+  h = rar_read_ahead(a, 1, &bytes_avail);
+  if (h == NULL || bytes_avail <= 0) {
+    /* The archive ends early: the decoder sees the end of the data. */
+    return (0);
+  }
+  if ((size_t)bytes_avail > want)
+    bytes_avail = (ssize_t)want;
+  *buf = h;
+  *avail = (size_t)bytes_avail;
+  rar->bytes_remaining -= bytes_avail;
+  rar->bytes_unconsumed = bytes_avail;
+  return (0);
+}
+
+static int
+read_data_unpack1520(struct archive_read *a, const void **buff, size_t *size,
+                     int64_t *offset)
+{
+  struct rar *rar = a->format->data;
+  ssize_t n;
+
+  *buff = NULL;
+  *size = 0;
+  *offset = rar->offset;
+  if (rar->entry_eof)
+    return (ARCHIVE_EOF);
+
+  if (rar->unpack1520 == NULL &&
+      (rar->unpack1520 = rar_unpack1520_new()) == NULL) {
+    archive_set_error(&a->archive, ENOMEM, "Couldn't allocate memory");
+    return (ARCHIVE_FATAL);
+  }
+  if (rar->unp_buffer == NULL &&
+      (rar->unp_buffer = malloc(rar->unp_buffer_size)) == NULL) {
+    archive_set_error(&a->archive, ENOMEM, "Couldn't allocate memory");
+    return (ARCHIVE_FATAL);
+  }
+  if (!rar->unpack1520_active) {
+    if (rar_unpack1520_begin(rar->unpack1520, rar->unp_ver,
+          (rar->file_flags & FHD_SOLID) != 0, (uint64_t)rar->unp_size) != 0) {
+      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                        "Unsupported RAR unpack version");
+      return (ARCHIVE_FAILED);
+    }
+    rar->unpack1520_active = 1;
+  }
+
+  n = rar_unpack1520_read(rar->unpack1520, rar->unp_buffer,
+        rar->unp_buffer_size, unpack1520_read_packed, a);
+  if (n > 0) {
+    *buff = rar->unp_buffer;
+    *size = (size_t)n;
+    rar->offset += n;
+    rar->crc_calculated = __archive_crc32(rar->crc_calculated, *buff,
+      (unsigned)n);
+    return (ARCHIVE_OK);
+  }
+  rar->entry_eof = 1;
+  switch (n) {
+  case RAR_UNPACK1520_DONE:
+    if (rar->file_crc != rar->crc_calculated) {
+#ifndef DONT_FAIL_ON_CRC_ERROR
+      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                        "File CRC error");
+      return (ARCHIVE_FAILED);
+#endif
+    }
+    return (ARCHIVE_EOF);
+  case RAR_UNPACK1520_TRUNCATED:
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                      "Truncated RAR file data");
+    return (ARCHIVE_FAILED);
+  case RAR_UNPACK1520_CORRUPT:
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                      "Invalid RAR 1.5/2.0 compressed data");
+    return (ARCHIVE_FAILED);
+  case RAR_UNPACK1520_ENOMEM:
+    archive_set_error(&a->archive, ENOMEM, "Couldn't allocate memory");
+    return (ARCHIVE_FATAL);
+  default:
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                      "Failed to read RAR file data");
+    return (ARCHIVE_FATAL);
+  }
 }
 
 static int
