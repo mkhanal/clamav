@@ -1074,6 +1074,7 @@ cl_unrar_error_t unrar_peek_file_header(void *hArchive, unrar_metadata_t *file_m
     }
     file_metadata->encrypted = info.is_encrypted ? 1 : 0;
     file_metadata->is_dir    = info.is_dir ? 1 : 0;
+    file_metadata->is_link   = (info.redir_type != ARCHIVE_RAR_REDIR_NONE) ? 1 : 0;
     file_metadata->method    = (uint8_t)(info.format == ARCHIVE_RAR_INFO_FORMAT_RAR5 ? info.method + RAR4_METHOD_STORE : info.method);
     convert_name(&info, file_metadata->filename, UNRAR_NAME_BUFFER_SIZE);
 
@@ -1161,9 +1162,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
         }
         if (r < ARCHIVE_WARN) {
             unrar_dbgmsg("unrar_extract_file: %s\n", archive_error_string(h->archive));
-            if (info.split_after) {
-                status = UNRAR_EOPEN;
-            }
+            status = info.split_after ? UNRAR_EOPEN : UNRAR_EDATA;
             break;
         }
         if ((uint64_t)size > remaining) {
@@ -1188,7 +1187,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     }
     close(fd);
 
-    if (status == UNRAR_OK) {
+    if (status == UNRAR_OK || status == UNRAR_EDATA) {
         h->state = HEADER_NONE;
         unrar_dbgmsg("unrar_extract_file: Extracted file to: %s\n", destPath);
     } else {

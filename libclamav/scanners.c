@@ -213,7 +213,10 @@ static cl_error_t cli_unrar_scanmetadata(unrar_metadata_t *metadata, cli_ctx *ct
     return status;
 }
 
-static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
+/* The unpacked size the RAR interface reports when a header does not declare one. */
+#define RAR_UNPACK_SIZE_UNKNOWN 0x7fffffff7fffffffULL
+
+static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx, bool *incomplete)
 {
     cl_error_t status          = CL_EPARSE;
     cl_unrar_error_t unrar_ret = UNRAR_ERR;
@@ -234,12 +237,14 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
 
     UNUSEDPARAM(desc);
 
-    if (filepath == NULL || ctx == NULL) {
+    if (filepath == NULL || ctx == NULL || incomplete == NULL) {
         cli_dbgmsg("RAR: Invalid arguments!\n");
         return CL_EARG;
     }
 
     cli_dbgmsg("in scanrar()\n");
+
+    *incomplete = false;
 
     /* Zero out the metadata struct before we read the header */
     memset(&metadata, 0, sizeof(unrar_metadata_t));
@@ -258,10 +263,12 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
             status = CL_EMEM;
             goto done;
         } else if (unrar_ret == UNRAR_EOPEN) {
-            status = CL_EOPEN;
+            *incomplete = true;
+            status      = CL_EOPEN;
             goto done;
         } else {
-            status = CL_EFORMAT;
+            *incomplete = true;
+            status      = CL_EFORMAT;
             goto done;
         }
     }
@@ -333,6 +340,9 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
             } else {
                 /* Memory error or some other error reading the header info. */
                 cli_dbgmsg("RAR: Error (%u) reading file header!\n", unrar_ret);
+                if (unrar_ret != UNRAR_EMEM) {
+                    *incomplete = true;
+                }
                 break;
             }
         } else {
@@ -359,6 +369,7 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
                 if (UNRAR_OK != cli_unrar_skip_file(hArchive)) {
                     /* Failed to skip!  Break extraction loop. */
                     cli_dbgmsg("RAR: Failed to skip directory. RAR archive extraction has failed.\n");
+                    *incomplete = true;
                     break;
                 }
             } else if (cli_checklimits("RAR", ctx, metadata.unpack_size, 0, 0)) {
@@ -370,6 +381,7 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
                 if (UNRAR_OK != cli_unrar_skip_file(hArchive)) {
                     /* Failed to skip!  Break extraction loop. */
                     cli_dbgmsg("RAR: Failed to skip file. RAR archive extraction has failed.\n");
+                    *incomplete = true;
                     break;
                 }
             } else if (metadata.encrypted != 0) {
@@ -404,11 +416,18 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
                 cli_dbgmsg("RAR: Extracting file: %s to %s\n", metadata.filename, extract_fullpath);
 
                 unrar_ret = cli_unrar_extract_file(hArchive, extract_fullpath, NULL);
+                if (unrar_ret == UNRAR_EDATA) {
+                    /* Damaged data: what could be decoded was written and is scanned. */
+                    cli_dbgmsg("RAR: Damaged data in file: %s\n", metadata.filename);
+                    *incomplete = true;
+                    unrar_ret   = UNRAR_OK;
+                }
                 if (unrar_ret != UNRAR_OK) {
                     /*
                      * Some other error extracting the file
                      */
                     cli_dbgmsg("RAR: Error extracting file: %s\n", metadata.filename);
+                    *incomplete = true;
 
                     /* TODO:
                      *   may need to manually skip the file depending on what, specifically, cli_unrar_extract_file() returned.
@@ -430,12 +449,30 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
                     }
 
                     /*
+                     * ... note when less was written than the header declares
+                     * (e.g. the piece of a file that continues in a volume we
+                     * do not have).
+                     */
+                    if (SCAN_HEURISTIC_INCOMPLETE_RAR && !metadata.is_link && (metadata.unpack_size != RAR_UNPACK_SIZE_UNKNOWN)) {
+                        STATBUF extracted_stat;
+                        if ((0 == CLAMSTAT(extract_fullpath, &extracted_stat)) &&
+                            ((uint64_t)extracted_stat.st_size < metadata.unpack_size)) {
+                            cli_dbgmsg("RAR: Extracted %" PRIu64 " of %" PRIu64 " bytes of file: %s\n", (uint64_t)extracted_stat.st_size, metadata.unpack_size, metadata.filename);
+                            *incomplete = true;
+                        }
+                    }
+
+                    /*
                      * ... scan the extracted file.
                      */
                     cli_dbgmsg("RAR: Extraction complete.  Scanning now...\n");
                     status = cli_magic_scan_file(extract_fullpath, ctx, filename_base, LAYER_ATTRIBUTES_NONE);
                     if (status == CL_EOPEN) {
                         cli_dbgmsg("RAR: File not found, Extraction failed!\n");
+                        if (!metadata.is_link) {
+                            /* A link or file copy has no content of its own to extract. */
+                            *incomplete = true;
+                        }
 
                         // Don't abort the scan just because one file failed to extract.
                         status = CL_SUCCESS;
@@ -529,6 +566,8 @@ static cl_error_t cli_scanrar(cli_ctx *ctx)
     char *tmpname = NULL;
     int tmpfd     = -1;
 
+    bool incomplete = false;
+
     if ((SCAN_UNPRIVILEGED) ||
         (NULL == ctx->fmap->path) ||
         (0 != access(ctx->fmap->path, R_OK)) ||
@@ -549,7 +588,7 @@ static cl_error_t cli_scanrar(cli_ctx *ctx)
     }
 
     /* scan file */
-    status = cli_scanrar_file(filepath, fd, ctx);
+    status = cli_scanrar_file(filepath, fd, ctx, &incomplete);
 
     if ((NULL == tmpname) && (CL_EOPEN == status)) {
         /*
@@ -565,7 +604,19 @@ static cl_error_t cli_scanrar(cli_ctx *ctx)
         fd       = tmpfd;
 
         /* try to scan again */
-        status = cli_scanrar_file(filepath, fd, ctx);
+        status = cli_scanrar_file(filepath, fd, ctx, &incomplete);
+    }
+
+    /*
+     * If requested, alert when the contents of the archive could not all be
+     * extracted and scanned. A scan that ended on an alert, a resource limit
+     * or an out-of-memory condition is reported as it is.
+     */
+    if (incomplete && SCAN_HEURISTIC_INCOMPLETE_RAR &&
+        ((CL_SUCCESS == status) || (CL_EOPEN == status) || (CL_EFORMAT == status))) {
+        if (CL_VIRUS == cli_append_potentially_unwanted(ctx, "Heuristics.Incomplete.RAR")) {
+            status = CL_VIRUS;
+        }
     }
 
 done:
