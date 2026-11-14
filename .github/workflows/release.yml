@@ -46,14 +46,14 @@ jobs:
           base=https://www.clamav.net/downloads/production
           curl -fsSL --retry 3 -O "$base/clamav-$VERSION.tar.gz"
           curl -fsSL --retry 3 -O "$base/clamav-$VERSION.tar.gz.sig"
-          expected=$(awk -v f="clamav-$VERSION.tar.gz" '$2 == f { print $1 }' "$GITHUB_WORKSPACE/.github/release/clamav-source-sha256.txt")
+          expected=$(awk -v f="clamav-$VERSION.tar.gz" '$2 == f { print $1 }' "$GITHUB_WORKSPACE/.github/dist/clamav-source-sha256.txt")
           if [ -z "$expected" ]; then
-            echo "no SHA-256 for clamav-$VERSION.tar.gz in .github/release/clamav-source-sha256.txt"; exit 1
+            echo "no SHA-256 for clamav-$VERSION.tar.gz in .github/dist/clamav-source-sha256.txt"; exit 1
           fi
           echo "$expected  clamav-$VERSION.tar.gz" | sha256sum -c -
           export GNUPGHOME="$RUNNER_TEMP/gnupg"
           mkdir -m 700 "$GNUPGHOME"
-          gpg --batch --import "$GITHUB_WORKSPACE/.github/release/talos-clamav-release-key.asc"
+          gpg --batch --import "$GITHUB_WORKSPACE/.github/dist/talos-clamav-release-key.asc"
           gpg --batch --status-fd 1 --verify "clamav-$VERSION.tar.gz.sig" "clamav-$VERSION.tar.gz" | tee verify.status
           grep -q "^\[GNUPG:\] VALIDSIG .* $TALOS_FINGERPRINT\$" verify.status
 
@@ -107,7 +107,7 @@ jobs:
 
       - name: Build
         run: |
-          docker build -f - -t "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV" "$RUNNER_TEMP/ctx" < .github/release/Dockerfile
+          docker build -f - -t "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV" "$RUNNER_TEMP/ctx" < .github/dist/Dockerfile
 
       - name: Smoke test
         run: |
