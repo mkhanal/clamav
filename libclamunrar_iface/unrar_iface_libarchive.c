@@ -286,6 +286,23 @@ static void free_volumes(unrar_handle_t *h)
     h->volume_count = 0;
 }
 
+/* A RAR5 variable-length integer. */
+static int read_vint(const unsigned char *buf, size_t len, size_t *pos, uint64_t *value)
+{
+    int shift = 0;
+
+    *value = 0;
+    while (*pos < len && shift < 64) {
+        unsigned char b = buf[(*pos)++];
+        *value |= (uint64_t)(b & 0x7f) << shift;
+        if (!(b & 0x80)) {
+            return 1;
+        }
+        shift += 7;
+    }
+    return 0;
+}
+
 /*
  * Reads the main archive header to learn whether the archive is a volume and
  * how its volumes are numbered.
@@ -293,8 +310,8 @@ static void free_volumes(unrar_handle_t *h)
 static void read_volume_flags(const char *filename, int *is_volume, int *new_numbering)
 {
     static const unsigned char sig[6] = {'R', 'a', 'r', '!', 0x1a, 0x07};
-    unsigned char *buf = NULL;
-    size_t len = 0;
+    unsigned char *buf                = NULL;
+    size_t len                        = 0;
     size_t i;
     FILE *f;
 
@@ -323,42 +340,19 @@ static void read_volume_flags(const char *filename, int *is_volume, int *new_num
             break;
         }
         if (buf[i + 6] == 0x01 && i + 8 <= len && buf[i + 7] == 0x00) {
-            /* RAR5: CRC32, then size, type, flags, extra size, archive flags. */
-            size_t p = i + 8 + 4;
-            uint64_t v[5] = {0, 0, 0, 0, 0};
-            int n, k;
-            int fields = 4;
-            for (n = 0; n < fields && p < len; n++) {
-                int shift = 0;
-                for (k = 0; k < 10 && p < len; k++) {
-                    v[n] |= (uint64_t)(buf[p] & 0x7f) << shift;
-                    shift += 7;
-                    if (!(buf[p++] & 0x80)) {
-                        break;
-                    }
-                }
-                if (n == 2 && !(v[2] & 0x0001)) {
-                    /* No extra area size field. */
-                    v[3] = v[4];
-                    fields = 3;
-                    n++;
-                    break;
-                }
-            }
-            if (n >= 4 || fields == 3) {
-                /* Archive flags follow the header fields. */
-                uint64_t aflags = 0;
-                int shift       = 0;
-                for (k = 0; k < 10 && p < len; k++) {
-                    aflags |= (uint64_t)(buf[p] & 0x7f) << shift;
-                    shift += 7;
-                    if (!(buf[p++] & 0x80)) {
-                        break;
-                    }
-                }
-                if (v[1] == 1) {
-                    *is_volume = (aflags & 0x0001) != 0;
-                }
+            /* RAR5 main header: CRC32, size, type, flags, [extra size],
+             * [data size], archive flags. Volumes are always numbered the
+             * new way. */
+            size_t p      = i + 8 + 4;
+            uint64_t size = 0, type = 0, hflags = 0, skip = 0, aflags = 0;
+            int ok = read_vint(buf, len, &p, &size) &&
+                     read_vint(buf, len, &p, &type) &&
+                     read_vint(buf, len, &p, &hflags) &&
+                     (!(hflags & 0x0001) || read_vint(buf, len, &p, &skip)) &&
+                     (!(hflags & 0x0002) || read_vint(buf, len, &p, &skip)) &&
+                     read_vint(buf, len, &p, &aflags);
+            if (ok && type == 1) {
+                *is_volume = (aflags & 0x0001) != 0;
             }
             *new_numbering = 1;
             break;
@@ -606,7 +600,7 @@ static wchar_t *utf8_to_wide(const char *src, size_t size)
  */
 static wchar_t *rar4_unicode_name(const unsigned char *name, size_t size)
 {
-    size_t oem_len = strnlen((const char *)name, size);
+    size_t oem_len           = strnlen((const char *)name, size);
     const unsigned char *enc = name + oem_len + 1;
     size_t enc_size          = size - oem_len - 1;
     size_t max               = size * 2 + 1;
@@ -745,13 +739,13 @@ static void convert_name(const struct archive_rar_entry_info *info, char *dest, 
 /* Unpacks a compressed comment with a one-entry archive made around it. */
 static unsigned char *unpack_comment(const struct archive_rar_comment_info *cmt, size_t *out_size)
 {
-    unsigned char *arc  = NULL;
-    unsigned char *out  = NULL;
-    struct archive *a   = NULL;
+    unsigned char *arc = NULL;
+    unsigned char *out = NULL;
+    struct archive *a  = NULL;
     struct archive_entry *e;
     size_t arc_size, pos, have = 0;
-    uint64_t want = cmt->unpacked_size;
-    uint32_t crc  = cmt->in_main_header ? 0 : cmt->crc;
+    uint64_t want                             = cmt->unpacked_size;
+    uint32_t crc                              = cmt->in_main_header ? 0 : cmt->crc;
     static const unsigned char rar4_marker[7] = {0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00};
     static const unsigned char rar4_main[13]  = {0, 0, 0x73, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0};
     unsigned char file_head[7 + 25 + 3];
@@ -774,11 +768,11 @@ static unsigned char *unpack_comment(const struct archive_rar_comment_info *cmt,
     pos += sizeof(rar4_main);
 
     memset(file_head, 0, sizeof(file_head));
-    file_head[2] = 0x74;
-    file_head[3] = 0x00;
-    file_head[4] = 0x80; /* Header flags: low byte 0, high 0x80 = always set. */
-    file_head[5] = (unsigned char)(sizeof(file_head) & 0xff);
-    file_head[6] = (unsigned char)(sizeof(file_head) >> 8);
+    file_head[2]  = 0x74;
+    file_head[3]  = 0x00;
+    file_head[4]  = 0x80; /* Header flags 0x8000: data size follows. */
+    file_head[5]  = (unsigned char)(sizeof(file_head) & 0xff);
+    file_head[6]  = (unsigned char)(sizeof(file_head) >> 8);
     file_head[7]  = (unsigned char)(cmt->size);
     file_head[8]  = (unsigned char)(cmt->size >> 8);
     file_head[9]  = (unsigned char)(cmt->size >> 16);
@@ -831,7 +825,7 @@ done:
         archive_read_free(a);
     }
     free(arc);
-    if (*out_size == 0 && have == 0 && out != NULL && want != 0) {
+    if (have == 0 && want != 0) {
         free(out);
         out = NULL;
     }
@@ -861,7 +855,7 @@ static void read_comment(struct archive *a, char **comment, uint32_t *comment_si
     method_index = cmt.format == ARCHIVE_RAR_INFO_FORMAT_RAR4 ? cmt.method - RAR4_METHOD_STORE : cmt.method;
     if (cmt.is_encrypted || method_index > RAR_METHOD_INDEX_MAX ||
         (cmt.format == ARCHIVE_RAR_INFO_FORMAT_RAR4 ? cmt.unp_ver > RAR4_UNPACK_VERSION_MAX
-                                                     : cmt.unp_ver > RAR5_UNPACK_VERSION_MAX) ||
+                                                    : cmt.unp_ver > RAR5_UNPACK_VERSION_MAX) ||
         cmt.unpacked_size > UNRAR_COMMENT_MAX_UNPACKED) {
         unrar_dbgmsg("unrar_open: Archive comment cannot be read.\n");
         return;
@@ -1140,6 +1134,12 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
         return UNRAR_ERR;
     }
 
+    if (NULL != outputBuffer) {
+        /* No caller asks for data in memory; its size would be unknown. */
+        unrar_dbgmsg("unrar_extract_file: Extracting to a buffer is not supported.\n");
+        return UNRAR_ERR;
+    }
+
     if (entry_has_no_output(&info) || info.is_encrypted) {
         return skip_current(h);
     }
@@ -1170,7 +1170,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
             size = (size_t)remaining;
         }
         remaining -= size;
-        if (size > 0 && outputBuffer == NULL) {
+        if (size > 0) {
             const char *p = buf;
             while (size > 0) {
                 ssize_t n = write(fd, p, size);
