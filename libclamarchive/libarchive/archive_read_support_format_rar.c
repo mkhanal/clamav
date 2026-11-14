@@ -343,6 +343,8 @@ struct rar
   size_t nodes;
   char filename_must_match;
 
+  int unp_ver;
+
   /* LZSS members */
   struct huffman_code maincode;
   struct huffman_code offsetcode;
@@ -1143,6 +1145,18 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
       rar->bytes_unconsumed = 0;
   }
 
+  /*
+   * unRAR rejects compressed entries of versions below 13 or above 29.
+   */
+  if (rar->compression_method >= COMPRESS_METHOD_FASTEST &&
+      rar->compression_method <= COMPRESS_METHOD_BEST) {
+    if (rar->unp_ver < 13 || rar->unp_ver > 29) {
+      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                        "Unsupported RAR unpack version %d", rar->unp_ver);
+      return (ARCHIVE_FAILED);
+    }
+  }
+
   *buff = NULL;
   if (rar->entry_eof || rar->offset_seek >= rar->unp_size) {
     *size = 0;
@@ -1619,6 +1633,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   p += sizeof(file_header);
 
   rar->compression_method = file_header.method;
+  rar->unp_ver = (unsigned char)file_header.unp_ver;
 
   ttime = archive_le32dec(file_header.file_time);
   rar->mtime = get_time(ttime);
