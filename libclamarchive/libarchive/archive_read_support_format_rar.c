@@ -1102,15 +1102,17 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
   }
 
   /*
-   * unRAR rejects compressed entries of versions below 13 or above 29.
+   * Only the RAR 2.9 decoder (unpack version 29) is available. Data
+   * compressed for an older or newer version is not decoded: it is an
+   * error, never an empty success.
    */
   if (rar->compression_method >= COMPRESS_METHOD_FASTEST &&
-      rar->compression_method <= COMPRESS_METHOD_BEST) {
-    if (rar->unp_ver < 13 || rar->unp_ver > 29) {
-      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                        "Unsupported RAR unpack version %d", rar->unp_ver);
-      return (ARCHIVE_FAILED);
-    }
+      rar->compression_method <= COMPRESS_METHOD_BEST &&
+      rar->unp_ver != 29) {
+    archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_UNSUPPORTED,
+                      "Unsupported RAR unpack version %d", rar->unp_ver);
+    rar->entry_eof = 1;
+    return (ARCHIVE_FAILED);
   }
 
   *buff = NULL;

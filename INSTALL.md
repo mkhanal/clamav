@@ -477,7 +477,10 @@ The following is a complete list of CMake options unique to configuring ClamAV:
   (`libclamarchive`, BSD-2-Clause) instead of RARLAB's UnRAR. libclamunrar is
   then neither built nor installed, libclamunrar_iface is built from
   libarchive with no added runtime dependency, and libclamav links it rather
-  than loading it at run time. Requires `ENABLE_UNRAR`.
+  than loading it at run time. Requires `ENABLE_UNRAR`. No RARLAB code is
+  involved. Archives compressed for RAR 2.9 and later (RAR 3.x, 4.x and 5.0)
+  are read; entries compressed for RAR 1.5, 2.0 and 2.6 are not extracted and
+  are reported as extraction errors.
 
   _Default: `OFF`_
 

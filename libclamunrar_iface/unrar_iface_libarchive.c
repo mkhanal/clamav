@@ -1155,6 +1155,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     struct archive_rar_entry_info info;
     cl_unrar_error_t status = UNRAR_OK;
     int fd                  = -1;
+    int unsupported         = 0;
     const void *buf;
     size_t size;
     la_int64_t offset;
@@ -1202,7 +1203,10 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
         }
         if (r < ARCHIVE_WARN) {
             unrar_dbgmsg("unrar_extract_file: %s\n", archive_error_string(h->archive));
-            if (info.split_after) {
+            if (archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_UNSUPPORTED) {
+                status      = UNRAR_ERR;
+                unsupported = 1;
+            } else if (info.split_after) {
                 status = UNRAR_EOPEN;
             }
             break;
@@ -1232,6 +1236,9 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     if (status == UNRAR_OK) {
         h->state = HEADER_NONE;
         unrar_dbgmsg("unrar_extract_file: Extracted file to: %s\n", destPath);
+    } else if (unsupported) {
+        /* The entry cannot be decoded, but the archive can still be read on. */
+        h->state = HEADER_NONE;
     } else {
         h->status = status;
         h->state  = HEADER_DONE;
