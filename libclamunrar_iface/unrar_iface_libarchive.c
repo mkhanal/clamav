@@ -798,7 +798,9 @@ static unsigned char *unpack_comment(const struct archive_rar_comment_info *cmt,
     file_head[1] = (unsigned char)((hcrc >> 8) & 0xff);
     memcpy(arc + pos, file_head, sizeof(file_head));
     pos += sizeof(file_head);
-    memcpy(arc + pos, cmt->data, cmt->size);
+    if (cmt->size > 0) {
+        memcpy(arc + pos, cmt->data, cmt->size);
+    }
     pos += cmt->size;
 
     hcrc   = archive_rar_crc32(arc + 7 + 2, sizeof(rar4_main) - 2);
