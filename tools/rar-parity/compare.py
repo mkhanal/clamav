@@ -80,18 +80,18 @@ def stage(rows: list[dict], work: str) -> None:
             f.write(data)
 
 
-def runner_script(rows: list[dict]) -> str:
+def runner_script(rows: list[dict], extra: list[str]) -> str:
     lines = ["cd /fx"]
     for r in rows:
-        cmd = ["clamscan", "-d", "/sigs"] + BASE_OPTIONS + r.get("options", []) + [r["staged"]]
+        cmd = ["clamscan", "-d", "/sigs"] + BASE_OPTIONS + extra + r.get("options", []) + [r["staged"]]
         lines.append(f"echo '@@ROW {r['staged']}'")
         lines.append(f"timeout 300 {' '.join(shlex.quote(c) for c in cmd)} 2>/tmp/rp.err; echo \"@@RC $?\"; echo '@@ERR'; cat /tmp/rp.err")
     return "\n".join(lines)
 
 
-def run_build(spec: str, rows: list[dict], work: str) -> dict[str, dict]:
+def run_build(spec: str, rows: list[dict], work: str, extra: list[str]) -> dict[str, dict]:
     kind, _, target = spec.partition(":")
-    script = runner_script(rows)
+    script = runner_script(rows, extra)
     sigs = os.path.join(HERE, "signatures")
     if kind == "docker":
         cmd = ["docker", "run", "--rm", "-v", f"{work}:/fx:ro", "-v", f"{sigs}:/sigs:ro", target, "sh", "-c", script]
@@ -175,7 +175,9 @@ def main() -> None:
     ap.add_argument("--no-runtime", action="store_true", help="skip the large archives generated at scan time")
     ap.add_argument("--report-only", action="store_true", help="print the table, exit 0 (baseline recording)")
     ap.add_argument("--json", help="write per-row results here")
+    ap.add_argument("--extra-options", default="", help='extra clamscan flags for both builds, one shell-quoted string, e.g. --extra-options="--alert-incomplete-rar=yes"')
     args = ap.parse_args()
+    extra = shlex.split(args.extra_options)
 
     with open(args.manifest) as f:
         manifest = json.load(f)
@@ -183,8 +185,8 @@ def main() -> None:
     work = tempfile.mkdtemp(prefix="rarparity-fx-")
     try:
         stage(rows, work)
-        ra = run_build(args.a, rows, work)
-        rb = run_build(args.b, rows, work) if args.b else None
+        ra = run_build(args.a, rows, work, extra)
+        rb = run_build(args.b, rows, work, extra) if args.b else None
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
