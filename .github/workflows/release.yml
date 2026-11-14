@@ -107,7 +107,7 @@ jobs:
 
       - name: Build
         run: |
-          docker build -f .github/release/Dockerfile -t "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV" "$RUNNER_TEMP/ctx"
+          docker build -f - -t "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV" "$RUNNER_TEMP/ctx" < .github/release/Dockerfile
 
       - name: Smoke test
         run: |
