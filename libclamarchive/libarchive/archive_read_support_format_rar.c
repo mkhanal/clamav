@@ -2978,7 +2978,7 @@ make_table_recurse(struct archive_read *a, struct huffman_code *code, int node,
                       "Huffman tree was not created");
     return (ARCHIVE_FAILED);
   }
-  if (node < 0 || (size_t)node >= code->numentries)
+  if ((size_t)node >= code->numentries && node >= 0)
   {
     archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
                       "Invalid location to Huffman tree specified");
@@ -2986,6 +2986,18 @@ make_table_recurse(struct archive_read *a, struct huffman_code *code, int node,
   }
 
   currtablesize = 1 << (maxdepth - depth);
+
+  /*
+   * An incomplete prefix code leaves some branches unassigned. Such a
+   * code is valid as long as the unassigned codes do not occur in the
+   * data, so mark them invalid here and fail only when one is read.
+   */
+  if (node < 0)
+  {
+    for(i = 0; i < currtablesize; i++)
+      table[i].length = -1;
+    return (ARCHIVE_OK);
+  }
 
   if (code->tree[node].branches[0] ==
     code->tree[node].branches[1])
@@ -2996,15 +3008,6 @@ make_table_recurse(struct archive_read *a, struct huffman_code *code, int node,
       table[i].value = code->tree[node].branches[0];
     }
   }
-  /*
-   * Dead code, node >= 0
-   *
-  else if (node < 0)
-  {
-    for(i = 0; i < currtablesize; i++)
-      table[i].length = -1;
-  }
-   */
   else
   {
     if(depth == maxdepth)
