@@ -108,6 +108,10 @@ int archive_read_rar_comment_info(struct archive *,
 /* CRC32 as RAR uses it for data and header checksums. */
 uint32_t archive_rar_crc32(const void *, size_t);
 
+/* Shared by both readers: unRAR's search for a self-extracting archive. */
+struct archive_read;
+int64_t __archive_rar_find_signature(struct archive_read *, int *);
+
 /* The RAR5 reader's halves of the two functions above. */
 int __archive_read_rar5_entry_info(struct archive *,
     struct archive_rar_entry_info *);
