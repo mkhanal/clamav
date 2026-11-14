@@ -1,0 +1,82 @@
+name: Release source tarball
+
+on:
+  push:
+    tags:
+      - "clamav-*-mk.*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  source-tarball:
+    name: source tarball
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TALOS_FINGERPRINT: 5BADCA2665EF59DCF8A23D8B707F0DB480836771
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve the version
+        run: |
+          if [[ ! "$TAG" =~ ^clamav-([0-9]+\.[0-9]+\.[0-9]+)-mk\.([0-9]+)$ ]]; then
+            echo "tag $TAG is not clamav-<version>-mk.<n>"; exit 1
+          fi
+          echo "VERSION=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
+          echo "OUT=clamav-${BASH_REMATCH[1]}-mk.${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
+          git rev-parse --verify --quiet "clamav-${BASH_REMATCH[1]}^{commit}" > /dev/null \
+            || { echo "upstream tag clamav-${BASH_REMATCH[1]} is not in this repository"; exit 1; }
+
+      - name: Download the official release and verify it
+        run: |
+          mkdir -p "$RUNNER_TEMP/official"
+          cd "$RUNNER_TEMP/official"
+          base=https://www.clamav.net/downloads/production
+          curl -fsSL --retry 3 -O "$base/clamav-$VERSION.tar.gz"
+          curl -fsSL --retry 3 -O "$base/clamav-$VERSION.tar.gz.sig"
+          expected=$(awk -v f="clamav-$VERSION.tar.gz" '$2 == f { print $1 }' "$GITHUB_WORKSPACE/.github/release/clamav-source-sha256.txt")
+          if [ -z "$expected" ]; then
+            echo "no SHA-256 for clamav-$VERSION.tar.gz in .github/release/clamav-source-sha256.txt"; exit 1
+          fi
+          echo "$expected  clamav-$VERSION.tar.gz" | sha256sum -c -
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          gpg --batch --import "$GITHUB_WORKSPACE/.github/release/talos-clamav-release-key.asc"
+          gpg --batch --status-fd 1 --verify "clamav-$VERSION.tar.gz.sig" "clamav-$VERSION.tar.gz" | tee verify.status
+          grep -q "^\[GNUPG:\] VALIDSIG .* $TALOS_FINGERPRINT\$" verify.status
+
+      - name: Apply the release branch changes
+        run: |
+          git diff --binary --no-renames "clamav-$VERSION^{commit}" "$TAG^{commit}" > "$RUNNER_TEMP/changes.patch"
+          mkdir "$RUNNER_TEMP/src"
+          tar -xzf "$RUNNER_TEMP/official/clamav-$VERSION.tar.gz" -C "$RUNNER_TEMP/src"
+          mv "$RUNNER_TEMP/src/clamav-$VERSION" "$RUNNER_TEMP/src/$OUT"
+          cd "$RUNNER_TEMP/src/$OUT"
+          git apply --binary -p1 "$RUNNER_TEMP/changes.patch"
+
+      - name: Pack reproducibly
+        run: |
+          mkdir -p dist
+          mtime=$(git log -1 --format=%ct "$TAG^{commit}")
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$mtime" \
+            -C "$RUNNER_TEMP/src" -cf - "$OUT" | gzip -n -9 > "dist/$OUT.tar.gz"
+          (cd dist && sha256sum "$OUT.tar.gz" | tee "$OUT.tar.gz.sha256")
+
+      - name: Attach to the release
+        run: |
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "ClamAV $VERSION ${TAG##*-} (mk)" \
+              --notes "Complete corresponding source: the official clamav-$VERSION.tar.gz with the changes of tag $TAG applied. SHA-256 in $OUT.tar.gz.sha256."
+          fi
+          gh release upload "$TAG" "dist/$OUT.tar.gz" "dist/$OUT.tar.gz.sha256"
