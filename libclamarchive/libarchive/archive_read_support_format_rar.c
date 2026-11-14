@@ -3968,6 +3968,67 @@ execute_filter_e8(struct rar_filter *filter, struct rar_virtual_machine *vm, siz
   return 1;
 }
 
+/*
+ * The Itanium filter is adapted from rardecode (filters.go),
+ * Copyright (c) 2015, Nicholas Waples, BSD-2-Clause.
+ */
+static uint32_t
+itanium_get_bits(const uint8_t *p, unsigned int pos, unsigned int count)
+{
+  uint32_t n = archive_le32dec(p + pos / 8) >> (pos & 7);
+  return n & (0xffffffffU >> (32 - count));
+}
+
+static void
+itanium_set_bits(uint8_t *p, unsigned int pos, unsigned int count,
+    uint32_t bits)
+{
+  uint32_t mask = (0xffffffffU >> (32 - count)) << (pos & 7);
+  uint32_t n = archive_le32dec(p + pos / 8);
+  n = (n & ~mask) | ((bits << (pos & 7)) & mask);
+  archive_le32enc(p + pos / 8, n);
+}
+
+static int
+execute_filter_itanium(struct rar_filter *filter, struct rar_virtual_machine *vm, size_t pos)
+{
+  static const uint8_t slot_masks[16] = {
+    4, 4, 6, 6, 0, 0, 7, 7, 4, 4, 0, 0, 4, 4, 0, 0
+  };
+  uint32_t length = filter->initialregisters[4];
+  uint32_t fileoffset = (uint32_t)pos >> 4;
+  uint32_t i;
+
+  if (length > PROGRAM_WORK_SIZE)
+    return 0;
+
+  for (i = 0; length - i > 21; i += 16, fileoffset++)
+  {
+    uint8_t *bundle = &vm->memory[i];
+    int tmpl = (bundle[0] & 0x1f) - 0x10;
+    unsigned int slot;
+
+    if (tmpl < 0 || slot_masks[tmpl] == 0)
+      continue;
+    for (slot = 0; slot <= 2; slot++)
+    {
+      unsigned int bitpos = slot * 41 + 18;
+      if (!(slot_masks[tmpl] & (1 << slot)))
+        continue;
+      if (itanium_get_bits(bundle, bitpos + 24, 4) == 5)
+      {
+        uint32_t target = itanium_get_bits(bundle, bitpos, 20);
+        itanium_set_bits(bundle, bitpos, 20, target - fileoffset);
+      }
+    }
+  }
+
+  filter->filteredblockaddress = 0;
+  filter->filteredblocklength = length;
+
+  return 1;
+}
+
 static int
 execute_filter_rgb(struct rar_filter *filter, struct rar_virtual_machine *vm)
 {
@@ -4100,6 +4161,8 @@ execute_filter(struct archive_read *a, struct rar_filter *filter, struct rar_vir
     return execute_filter_e8(filter, vm, pos, 0);
   if (filter->prog->fingerprint == 0x393CD7E57E)
     return execute_filter_e8(filter, vm, pos, 1);
+  if (filter->prog->fingerprint == 0x783769893F)
+    return execute_filter_itanium(filter, vm, pos);
   if (filter->prog->fingerprint == 0x951C2C5DC8)
     return execute_filter_rgb(filter, vm);
   if (filter->prog->fingerprint == 0xD8BC85E701)
