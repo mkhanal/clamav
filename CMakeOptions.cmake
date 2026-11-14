@@ -118,6 +118,10 @@ option(ENABLE_UNRAR
     "Build & install libclamunrar."
     ${ENABLE_UNRAR_DEFAULT})
 
+option(ENABLE_UNRAR_LIBARCHIVE
+    "Read RAR archives with the vendored libarchive (BSD-2-Clause) instead of RARLAB unRAR. libclamunrar is then neither built nor installed, and libclamav links libclamunrar_iface directly."
+    OFF)
+
 option(ENABLE_SYSTEMD
     "Install systemd service files if systemd is found."
     ${ENABLE_SYSTEMD_DEFAULT})
