@@ -399,6 +399,13 @@ Example
 # Default: no
 #AlertEncryptedDoc yes
 
+# Alert on RAR archives whose contents could not all be extracted and scanned
+# (a single volume of a multi-volume set, missing volumes, corrupt or truncated
+# data, an entry that fails to extract) with the Heuristics.Incomplete.RAR
+# heuristic signature. Encrypted archives are covered by AlertEncryptedArchive.
+# Default: no
+#AlertIncompleteRAR yes
+
 # With this option enabled OLE2 files containing VBA macros, which were not
 # detected by signatures will be marked as "Heuristics.OLE2.ContainsMacros".
 # Default: no
