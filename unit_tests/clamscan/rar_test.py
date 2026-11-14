@@ -156,6 +156,21 @@ class TC(testcase.TestCase):
                     assert output.ec == 1  # virus
                     self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile)])
 
+    def test_pending_filter_does_not_reach_next_solid_entry(self):
+        self.step_name('Test a filter pending at the end of a solid entry does not alter the next entry')
+
+        # a.txt ends by defining the standard E8 filter for the range where
+        # b.bin starts. Filters never span entries, so b.bin is extracted
+        # unfiltered; applying the pending filter alters or fails it.
+        path_db = TC.path_tmp / 'rar-pending-filter.hdb'
+        path_db.write_text('1bfecfec1bd85b77b4fe53c6ec683d98:74:PendingFilterMarker\n')
+
+        testfile = TC.path_rar / 'rar4-solid-pending-filter.rar'
+        output = self.scan(testfile, path_db=path_db)
+
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: PendingFilterMarker.UNOFFICIAL FOUND'.format(testfile)])
+
     def test_archive_comment_is_scanned(self):
         self.step_name('Test RAR 2.9 (packed) and RAR5 archive comments are scanned')
 

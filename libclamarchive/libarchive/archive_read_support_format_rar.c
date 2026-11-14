@@ -470,6 +470,7 @@ static int parse_filter(struct archive_read *, const uint8_t *, uint16_t,
                         uint8_t);
 static int run_filters(struct archive_read *);
 static void clear_filters(struct rar_filters *);
+static void init_filters(struct rar_filters *, int);
 static struct rar_filter *create_filter(struct rar_program_code *,
                                         const uint8_t *, uint32_t,
                                         uint32_t[8], size_t, uint32_t);
@@ -1551,6 +1552,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   struct rar_file_header file_header;
   int64_t header_size;
   unsigned filename_size, end;
+  int continues_solid;
   char *filename;
   char *strp;
   char packed_size[8];
@@ -2052,8 +2054,9 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   }
 
   rar->bytes_uncopied = rar->bytes_unconsumed = 0;
-  if (!(rar->file_flags & FHD_SOLID) || !rar->solid_state_valid ||
-      rar->compression_method == COMPRESS_METHOD_STORE)
+  continues_solid = (rar->file_flags & FHD_SOLID) && rar->solid_state_valid &&
+      rar->compression_method != COMPRESS_METHOD_STORE;
+  if (!continues_solid)
   {
     if (rar->compression_method != COMPRESS_METHOD_STORE)
       rar->solid_state_valid = 0;
@@ -2065,13 +2068,16 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
     rar->ppmd_valid = 0;
     rar->ppmd_escape = 2;
-    rar->filters.filterstart = INT64_MAX;
   }
   /*
    * Otherwise this entry continues the solid stream: the window, the
-   * tables, the PPMd model and the filters carry over, and its data starts
-   * where the previous entry's ended.
+   * tables and the PPMd model carry over, and its data starts where the
+   * previous entry's ended. Filters never span entries: the filter
+   * programs defined so far carry over in a solid stream, but a filter
+   * still waiting for its block does not.
    */
+  if (rar->compression_method != COMPRESS_METHOD_STORE)
+    init_filters(&rar->filters, continues_solid);
   if (rar->compression_method != COMPRESS_METHOD_STORE)
     rar->solid_state_valid = 1;
   rar->end_marker_read = 0;
@@ -4002,6 +4008,23 @@ delete_filter(struct rar_filter *filter)
     free(filter->globaldata);
     free(filter);
     filter = next;
+  }
+}
+
+static void
+init_filters(struct rar_filters *filters, int keep_programs)
+{
+  delete_filter(filters->stack);
+  filters->stack = NULL;
+  filters->filterstart = INT64_MAX;
+  filters->lastend = 0;
+  filters->bytes = NULL;
+  filters->bytes_ready = 0;
+  if (!keep_programs)
+  {
+    delete_program_code(filters->progs);
+    filters->progs = NULL;
+    filters->lastfilternum = 0;
   }
 }
 
