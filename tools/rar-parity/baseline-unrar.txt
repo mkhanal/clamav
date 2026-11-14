@@ -1,0 +1,229 @@
+row                                                                     category   expect    A       #A  B       #B  status
+libarchive__test_rar_multivolume_multiple_files.part1.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_multiple_files.part2.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_multiple_files.part3.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_multiple_files.part4.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_multiple_files.part5.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_multiple_files.part6.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_single_file.part1.rar                  multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_single_file.part2.rar                  multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_single_file.part3.rar                  multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_uncompressed_files.part01.rar          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_uncompressed_files.part02.rar          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_uncompressed_files.part03.rar          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_uncompressed_files.part04.rar          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_uncompressed_files.part05.rar          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_uncompressed_files.part06.rar          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_uncompressed_files.part07.rar          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_uncompressed_files.part08.rar          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_uncompressed_files.part09.rar          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_rar_multivolume_uncompressed_files.part10.rar          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar.rar                                    valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar3_lowdist_reset.rar                     valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar4_encrypted.rar                         encrypted  encrypted alert    2  -        0  ok
+libarchive__test_read_format_rar4_encrypted_filenames.rar               encrypted  encrypted alert    1  -        0  ok
+libarchive__test_read_format_rar4_solid_encrypted.rar                   encrypted  encrypted alert    1  -        0  ok
+libarchive__test_read_format_rar4_solid_encrypted_filenames.rar         encrypted  encrypted alert    1  -        0  ok
+libarchive__test_read_format_rar5_arm.rar                               valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_arm_filter_on_window_boundary.rar     valid      error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_bad_tables.rar                        fuzz       detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_bad_window_sz_in_mltarc_file.rar      fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_blake2.rar                            valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_block_size_is_too_small.rar           fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_bytes_remaining_underflow.rar         fuzz       clean     clean    0  -        0  ok
+libarchive__test_read_format_rar5_compressed.rar                        valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_data_ready_pointer_leak.rar           fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_decode_number_out_of_bounds_read.rar  fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_different_solid_window_size.rar       fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_different_window_size.rar             fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_different_winsize_on_merge.rar        fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_dirdata.rar                           valid      error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_distance_overflow.rar                 fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_encrypted.rar                         encrypted  encrypted alert    2  -        0  ok
+libarchive__test_read_format_rar5_encrypted_filenames.rar               encrypted  encrypted alert    1  -        0  ok
+libarchive__test_read_format_rar5_extra_data_size_toolong.rar           fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_extra_field_underflow.rar             fuzz       clean     clean    0  -        0  ok
+libarchive__test_read_format_rar5_extra_field_version.rar               valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_fileattr.rar                          valid      detect    alert    4  -        0  ok
+libarchive__test_read_format_rar5_group_name_toolong.rar                fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_hardlink.rar                          valid      clean     clean    0  -        0  ok
+libarchive__test_read_format_rar5_invalid_dict_reference.rar            fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_invalid_hash_valid_htime_exfld.rar    fuzz       detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_leftshift1.rar                        fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_leftshift2.rar                        fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_loop_bug.rar                          fuzz       clean     clean    0  -        0  ok
+libarchive__test_read_format_rar5_main_block_extra_bytes.rar            fuzz       detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_multiarchive.part01.rar               multivolume error     alert    2  -        0  ok
+libarchive__test_read_format_rar5_multiarchive.part02.rar               multivolume error     alert    1  -        0  ok
+libarchive__test_read_format_rar5_multiarchive.part03.rar               multivolume error     alert    1  -        0  ok
+libarchive__test_read_format_rar5_multiarchive.part04.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_multiarchive.part05.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_multiarchive.part06.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_multiarchive.part07.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_multiarchive.part08.rar               multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_multiarchive_solid.part01.rar         multivolume error     alert    9  -        0  ok
+libarchive__test_read_format_rar5_multiarchive_solid.part02.rar         multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_multiarchive_solid.part03.rar         multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_multiarchive_solid.part04.rar         multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_multiple_files.rar                    valid      detect    alert    4  -        0  ok
+libarchive__test_read_format_rar5_multiple_files_solid.rar              valid      detect    alert    4  -        0  ok
+libarchive__test_read_format_rar5_nonempty_dir_stream.rar               fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_only_crypt_exfld.rar                  encrypted  encrypted alert    1  -        0  ok
+libarchive__test_read_format_rar5_owner.rar                             valid      clean     clean    0  -        0  ok
+libarchive__test_read_format_rar5_owner_name_toolong.rar                fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_readtables_overflow.rar               fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_redir_overflow.rar                    fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_redir_varint_2byte.rar                fuzz       clean     clean    0  -        0  ok
+libarchive__test_read_format_rar5_sfx.exe                               valid      clean     clean    0  -        0  ok
+libarchive__test_read_format_rar5_skip_block_extra_bytes.rar            fuzz       detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_solid.rar                             valid      detect    alert    7  -        0  ok
+libarchive__test_read_format_rar5_solid_encrypted.rar                   encrypted  encrypted alert    1  -        0  ok
+libarchive__test_read_format_rar5_solid_encrypted_filenames.rar         encrypted  encrypted alert    1  -        0  ok
+libarchive__test_read_format_rar5_stored.rar                            valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_stored_manyfiles.rar                  valid      detect    alert    3  -        0  ok
+libarchive__test_read_format_rar5_symlink.rar                           valid      clean     clean    0  -        0  ok
+libarchive__test_read_format_rar5_truncated_huff.rar                    fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_unicode.rar                           valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_unpacked_size_exceeds_declared.rar    fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_unsupported_exfld.rar                 fuzz       detect    alert    1  -        0  ok
+libarchive__test_read_format_rar5_win32.rar                             valid      detect    alert    7  -        0  ok
+libarchive__test_read_format_rar5_window_buf_and_size_desync.rar        fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar5_zip_in_rar.rar                        valid      detect    alert    3  -        0  ok
+libarchive__test_read_format_rar_binary_data.rar                        valid      detect    alert   11  -        0  ok
+libarchive__test_read_format_rar_compress_best.rar                      valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar_compress_normal.rar                    valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar_encryption_data.rar                    encrypted  encrypted alert    1  -        0  ok
+libarchive__test_read_format_rar_encryption_header.rar                  encrypted  encrypted alert    1  -        0  ok
+libarchive__test_read_format_rar_encryption_partially.rar               encrypted  detect    alert    1  -        0  FAIL  <- A vs manifest: missing 1 of 1 signatures
+libarchive__test_read_format_rar_endarc_huge.rar                        fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar_filter.rar                             valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar_filter_incomplete_block.rar            valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar_invalid1.rar                           fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar_multi_lzss_blocks.rar                  valid      clean     clean    0  -        0  ok
+libarchive__test_read_format_rar_multivolume.part0001.rar               multivolume error     alert    2  -        0  ok
+libarchive__test_read_format_rar_multivolume.part0002.rar               multivolume error     alert    2  -        0  ok
+libarchive__test_read_format_rar_multivolume.part0003.rar               multivolume error     alert    2  -        0  ok
+libarchive__test_read_format_rar_multivolume.part0004.rar               multivolume error     alert    1  -        0  ok
+libarchive__test_read_format_rar_newsub_huge.rar                        fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar_newsub_rr_over_1m.rar                  valid      clean     clean    0  -        0  ok
+libarchive__test_read_format_rar_noeof.rar                              fuzz       detect    alert    1  -        0  ok
+libarchive__test_read_format_rar_overflow.rar                           fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar_ppmd_lzss_conversion.rar               valid      limits    alert    1  -        0  ok
+libarchive__test_read_format_rar_ppmd_use_after_free.rar                fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar_ppmd_use_after_free2.rar               fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar_seek_data_cursor0.rar                  fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar_sfx.exe                                valid      detect    alert    2  -        0  ok
+libarchive__test_read_format_rar_subblock.rar                           valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar_symlink_huge.rar                       fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar_unbound_staticdata.rar                 fuzz       error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+libarchive__test_read_format_rar_unicode.rar                            valid      detect    alert    1  -        0  ok
+libarchive__test_read_format_rar_windows.rar                            valid      detect    alert    2  -        0  ok
+libarchive__test_read_large_splitted_rar.rar                            multivolume error     alert    1  -        0  ok
+libarchive__test_read_splitted_rar.rar                                  multivolume error     alert    1  -        0  ok
+libarchive__test_splitted_rar_seek_support.rar                          multivolume error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+generated__bomb-rar4-high-ratio.rar                                     bomb       detect    alert    1  -        0  ok
+generated__bomb-rar4-high-ratio.rar@max-filesize-1M                     bomb       limits    alert    1  -        0  ok
+generated__bomb-rar4-many-files.rar                                     bomb       detect    alert  400  -        0  ok
+generated__bomb-rar4-many-files.rar@max-files-100                       bomb       limits    alert  100  -        0  ok
+generated__bomb-rar5-high-ratio.rar                                     bomb       detect    alert    1  -        0  ok
+generated__bomb-rar5-high-ratio.rar@max-filesize-1M                     bomb       limits    alert    1  -        0  ok
+generated__bomb-rar5-many-files.rar                                     bomb       detect    alert  400  -        0  ok
+generated__bomb-rar5-many-files.rar@max-files-100                       bomb       limits    alert  100  -        0  ok
+generated__gen-rar4-best.rar                                            valid      detect    alert    2  -        0  ok
+generated__gen-rar4-comment.rar                                         valid      detect    alert    1  -        0  ok
+generated__gen-rar4-compressed.rar                                      valid      detect    alert    2  -        0  ok
+generated__gen-rar4-directories.rar                                     valid      detect    alert    3  -        0  ok
+generated__gen-rar4-encrypted-data.rar                                  encrypted  encrypted alert    1  -        0  ok
+generated__gen-rar4-encrypted-headers.rar                               encrypted  encrypted alert    1  -        0  ok
+generated__gen-rar4-encrypted-partial.rar                               encrypted  detect    alert    2  -        0  ok
+generated__gen-rar4-encrypted-solid.rar                                 encrypted  encrypted alert    1  -        0  ok
+generated__gen-rar4-filter-audio.rar                                    valid      detect    alert    1  -        0  ok
+generated__gen-rar4-filter-delta.rar                                    valid      detect    alert    1  -        0  ok
+generated__gen-rar4-filter-itanium.rar                                  valid      detect    alert    1  -        0  ok
+generated__gen-rar4-filter-rgb.rar                                      valid      detect    alert    1  -        0  ok
+generated__gen-rar4-filter-x86.rar                                      valid      detect    alert    1  -        0  ok
+generated__gen-rar4-large-dict.rar                                      valid      detect    alert    2  -        0  ok
+generated__gen-rar4-multivolume.part01.rar                              multivolume error     alert    3  -        0  ok
+generated__gen-rar4-multivolume.part02.rar                              multivolume error     alert    1  -        0  ok
+generated__gen-rar4-multivolume.part03.rar                              multivolume error     alert    1  -        0  ok
+generated__gen-rar4-multivolume.part04.rar                              multivolume error     alert    1  -        0  ok
+generated__gen-rar4-multivolume.part05.rar                              multivolume error     alert    1  -        0  ok
+generated__gen-rar4-ppmd.rar                                            valid      detect    alert    2  -        0  ok
+generated__gen-rar4-solid-stored.rar                                    valid      detect    alert    2  -        0  ok
+generated__gen-rar4-solid.rar                                           valid      detect    alert    3  -        0  ok
+generated__gen-rar4-stored.rar                                          valid      detect    alert    2  -        0  ok
+generated__gen-rar4-unicode-names.rar                                   valid      detect    alert    1  -        0  ok
+generated__gen-rar5-best.rar                                            valid      detect    alert    2  -        0  ok
+generated__gen-rar5-comment.rar                                         valid      detect    alert    1  -        0  ok
+generated__gen-rar5-compressed.rar                                      valid      detect    alert    2  -        0  ok
+generated__gen-rar5-directories.rar                                     valid      detect    alert    3  -        0  ok
+generated__gen-rar5-encrypted-data.rar                                  encrypted  encrypted alert    1  -        0  ok
+generated__gen-rar5-encrypted-headers.rar                               encrypted  encrypted alert    1  -        0  ok
+generated__gen-rar5-encrypted-partial.rar                               encrypted  detect    alert    2  -        0  ok
+generated__gen-rar5-encrypted-solid.rar                                 encrypted  encrypted alert    1  -        0  ok
+generated__gen-rar5-filter-delta.rar                                    valid      detect    alert    1  -        0  ok
+generated__gen-rar5-filter-x86.rar                                      valid      detect    alert    1  -        0  ok
+generated__gen-rar5-large-dict.rar                                      valid      detect    alert    2  -        0  ok
+generated__gen-rar5-multivolume.part01.rar                              multivolume error     alert    3  -        0  ok
+generated__gen-rar5-multivolume.part02.rar                              multivolume error     alert    1  -        0  ok
+generated__gen-rar5-multivolume.part03.rar                              multivolume error     alert    1  -        0  ok
+generated__gen-rar5-multivolume.part04.rar                              multivolume error     alert    1  -        0  ok
+generated__gen-rar5-multivolume.part05.rar                              multivolume error     alert    1  -        0  ok
+generated__gen-rar5-solid-stored.rar                                    valid      detect    alert    2  -        0  ok
+generated__gen-rar5-solid.rar                                           valid      detect    alert    3  -        0  ok
+generated__gen-rar5-stored.rar                                          valid      detect    alert    2  -        0  ok
+generated__gen-rar5-unicode-names.rar                                   valid      detect    alert    1  -        0  ok
+generated__nest-rar4-depth1.rar                                         nested     detect    alert    2  -        0  ok
+generated__nest-rar4-depth2.rar                                         nested     detect    alert    3  -        0  ok
+generated__nest-rar4-depth3.rar                                         nested     detect    alert    4  -        0  ok
+generated__nest-rar4-depth4.rar                                         nested     detect    alert    5  -        0  ok
+generated__nest-rar4-depth5.rar                                         nested     detect    alert    6  -        0  ok
+generated__nest-rar4-depth6.rar                                         nested     detect    alert    6  -        0  ok
+generated__nest-rar4-depth6.rar@max-recursion-4                         bomb       limits    alert    4  -        0  ok
+generated__nest-rar5-depth1.rar                                         nested     detect    alert    2  -        0  ok
+generated__nest-rar5-depth2.rar                                         nested     detect    alert    3  -        0  ok
+generated__nest-rar5-depth3.rar                                         nested     detect    alert    4  -        0  ok
+generated__nest-rar5-depth4.rar                                         nested     detect    alert    5  -        0  ok
+generated__nest-rar5-depth5.rar                                         nested     detect    alert    6  -        0  ok
+generated__nest-rar5-depth6.rar                                         nested     detect    alert    6  -        0  ok
+generated__nest-rar5-depth6.rar@max-recursion-4                         bomb       limits    alert    4  -        0  ok
+derived__corrupt-rar4-compressed-flipped-data-byte.rar                  corrupt    error     alert    1  -        0  ok
+derived__corrupt-rar4-compressed-flipped-header-byte.rar                corrupt    error     alert    1  -        0  ok
+derived__corrupt-rar4-compressed-truncated-endheader.rar                corrupt    error     alert    1  -        0  ok
+derived__corrupt-rar4-compressed-truncated-half.rar                     corrupt    error     alert    1  -        0  ok
+derived__corrupt-rar4-solid-flipped-data-byte.rar                       corrupt    error     alert    2  -        0  ok
+derived__corrupt-rar4-solid-flipped-header-byte.rar                     corrupt    error     alert    1  -        0  ok
+derived__corrupt-rar4-solid-truncated-endheader.rar                     corrupt    error     alert    2  -        0  ok
+derived__corrupt-rar4-solid-truncated-half.rar                          corrupt    error     alert    2  -        0  ok
+derived__corrupt-rar5-compressed-flipped-data-byte.rar                  corrupt    error     alert    1  -        0  ok
+derived__corrupt-rar5-compressed-flipped-header-byte.rar                corrupt    error     alert    2  -        0  ok
+derived__corrupt-rar5-compressed-truncated-endheader.rar                corrupt    error     alert    2  -        0  ok
+derived__corrupt-rar5-compressed-truncated-half.rar                     corrupt    error     alert    1  -        0  ok
+derived__corrupt-rar5-solid-flipped-data-byte.rar                       corrupt    error     alert    2  -        0  ok
+derived__corrupt-rar5-solid-flipped-header-byte.rar                     corrupt    error     alert    3  -        0  ok
+derived__corrupt-rar5-solid-truncated-endheader.rar                     corrupt    error     alert    3  -        0  ok
+derived__corrupt-rar5-solid-truncated-half.rar                          corrupt    error     alert    2  -        0  ok
+derived__corrupt-rar5-stored-declared-size-too-large.rar                corrupt    error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+derived__corrupt-signature-only-rar4.rar                                corrupt    error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+derived__corrupt-signature-only-rar5.rar                                corrupt    error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+derived__corrupt-signature-then-garbage.rar                             corrupt    error     clean    0  -        0  FAIL  <- A vs manifest: clean verdict, contents not scanned
+derived__nest-mixed-13-layers.zip                                       nested     detect    alert    2  -        0  ok
+derived__nest-mixed-13-layers.zip@max-recursion-8                       bomb       limits    alert    1  -        0  ok
+derived__nest-rar4-in-zip-in-rar5.rar                                   nested     detect    alert    3  -        0  ok
+derived__nest-rar4-in-zip-in-zip.zip                                    nested     detect    alert    3  -        0  ok
+derived__nest-rar4-in-zip.zip                                           nested     detect    alert    3  -        0  ok
+derived__nest-rar4-zip-rar-zip-rar-chain.zip                            nested     detect    alert    3  -        0  ok
+derived__nest-rar5-in-zip-in-rar4.rar                                   nested     detect    alert    3  -        0  ok
+derived__nest-rar5-in-zip-in-zip.zip                                    nested     detect    alert    3  -        0  ok
+derived__nest-rar5-in-zip.zip                                           nested     detect    alert    3  -        0  ok
+derived__nest-rar5-zip-rar-zip-rar-chain.zip                            nested     detect    alert    3  -        0  ok
+derived__nest-zip-in-rar4.rar                                           nested     detect    alert    2  -        0  ok
+derived__nest-zip-in-rar5.rar                                           nested     detect    alert    2  -        0  ok
+unit_tests__input__clamav_hdb_scanfiles__clam-v2.rar.xor                valid      detect    alert    1  -        0  ok
+unit_tests__input__clamav_hdb_scanfiles__clam-v3.rar.xor                valid      detect    alert    1  -        0  ok
+runtime__large-entry-stored-rar4                                        bomb       limits    alert    1  -        0  ok
+runtime__many-files-stored-rar4                                         bomb       limits    alert    1  -        0  ok
+runtime__large-entry-stored-rar5                                        bomb       limits    alert    1  -        0  ok
+runtime__many-files-stored-rar5                                         bomb       limits    alert    1  -        0  ok
+
+226 rows, 162 ok, 64 with problems (report only)
