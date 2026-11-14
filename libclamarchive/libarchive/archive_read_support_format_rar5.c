@@ -117,6 +117,7 @@ struct file_header {
 	uint8_t eof : 1;             /* Did we finish unpacking the file? */
 	uint8_t dir : 1;             /* Is this file entry a directory? */
 	uint8_t encrypted : 1;       /* Is the data encrypted? */
+	uint64_t version;            /* File version extra record, or 0. */
 
 	/* Optional time fields. */
 	int64_t e_mtime;
@@ -1170,47 +1171,6 @@ static int bid_standard(struct archive_read* a) {
 	return -1;
 }
 
-static int bid_sfx(struct archive_read *a)
-{
-	const char *h;
-
-	if ((h = __archive_read_ahead(a, 7, NULL)) == NULL)
-		return -1;
-
-	if ((h[0] == 'M' && h[1] == 'Z') || memcmp(h, "\x7F\x45LF", 4) == 0) {
-		/* This is a PE file */
-		char signature[sizeof(rar5_signature_xor)];
-		ssize_t offset = 0x10000;
-		ssize_t window = 4096;
-
-		rar5_signature(signature);
-
-		while (offset + window <= SFX_MAX_READAHEAD) {
-			ssize_t bytes_avail;
-
-			h = __archive_read_ahead(a, offset + window, &bytes_avail);
-			if (h == NULL) {
-				if (bytes_avail >= offset + 0x10) {
-					/* Remaining bytes are less than window. */
-					window = bytes_avail - offset;
-					continue;
-				}
-				return 0;
-			}
-			if (bytes_avail > SFX_MAX_READAHEAD)
-				bytes_avail = SFX_MAX_READAHEAD;
-			while (offset <= bytes_avail - 8) {
-				if (memcmp(h + offset, signature,
-				    sizeof(signature)) == 0)
-					return 30;
-				offset += 0x10;
-			}
-		}
-	}
-
-	return 0;
-}
-
 static int rar5_bid(struct archive_read* a, int best_bid) {
 	int my_bid;
 
@@ -1221,9 +1181,10 @@ static int rar5_bid(struct archive_read* a, int best_bid) {
 	if(my_bid > -1) {
 		return my_bid;
 	}
-	my_bid = bid_sfx(a);
-	if (my_bid > -1) {
-		return my_bid;
+	{
+		int is_rar5 = 0;
+		if(__archive_rar_find_signature(a, &is_rar5) >= 0 && is_rar5)
+			return 30;
 	}
 
 	return -1;
@@ -1397,6 +1358,8 @@ static int parse_file_extra_version(struct archive_read* a,
 		return ARCHIVE_EOF;
 
 	/* extra_data_size should be zero here. */
+
+	((struct rar5 *)a->format->data)->file.version = version;
 
 	cur_filename = archive_entry_pathname_utf8(e);
 	if(cur_filename == NULL) {
@@ -1716,11 +1679,14 @@ static int process_head_file_extra(struct archive_read* a,
 	uint64_t extra_field_id = 0;
 	uint64_t var_size;
 
+	/*
+	 * Records are read the way unRAR reads them: a record whose size does
+	 * not fit ends the extra area, and a record that cannot be understood
+	 * is ignored. Either way the entry itself is kept.
+	 */
 	while(extra_data_size > 0) {
 		int r;
-
-		/* Make sure we won't fail if the file declares only unsupported
-		attributes. */
+		int64_t after_field;
 		int ret = ARCHIVE_OK;
 
 		r = read_var(a, &extra_field_size, &var_size);
@@ -1732,6 +1698,11 @@ static int process_head_file_extra(struct archive_read* a,
 			return ARCHIVE_EOF;
 		}
 
+		if(extra_field_size == 0 || extra_data_size <= 0 ||
+		    extra_field_size > (uint64_t)extra_data_size)
+			break;
+		after_field = extra_data_size - (int64_t)extra_field_size;
+
 		r = read_var(a, &extra_field_id, &var_size);
 		if(r != ARCHIVE_OK)
 			return r;
@@ -1741,6 +1712,8 @@ static int process_head_file_extra(struct archive_read* a,
 		if(ARCHIVE_OK != consume(a, var_size)) {
 			return ARCHIVE_EOF;
 		}
+		if(extra_data_size < after_field)
+			break;
 
 		switch(extra_field_id) {
 			case EX_HASH:
@@ -1773,37 +1746,31 @@ static int process_head_file_extra(struct archive_read* a,
 			case EX_SUBDATA:
 				/* fallthrough */
 			default:
-				/* Skip unsupported entry. */
-				if (extra_field_size > (uint64_t)extra_data_size) {
-					archive_set_error(&a->archive,
-					    ARCHIVE_ERRNO_FILE_FORMAT,
-					    "RAR5 extra-field size exceeds remaining extra-field data");
-					return ARCHIVE_FATAL;
-				}
-				extra_data_size -= extra_field_size;
-				if (ARCHIVE_OK != consume(a, extra_field_size)) {
-					return ARCHIVE_EOF;
-				}
-
-				/* Don't fail on unsupported attribute -- we've handled it
-				   by skipping over it. */
-				ret = ARCHIVE_OK;
+				/* Skipped below. */
+				break;
 		}
 
-		if (ret != ARCHIVE_OK) {
-			/* Forward any errors signalled by the attribute parsing
-			   functions. */
+		if(ret == ARCHIVE_EOF ||
+		    (ret != ARCHIVE_OK && archive_errno(&a->archive) == ENOMEM))
 			return ret;
+
+		if(extra_data_size < after_field) {
+			/* The record ran past its end. */
+			break;
+		}
+
+		/* Go to the next record, whatever this one left unread. */
+		if(extra_data_size > after_field) {
+			if(ARCHIVE_OK != consume(a,
+			    extra_data_size - after_field))
+				return ARCHIVE_EOF;
+			extra_data_size = after_field;
 		}
 	}
 
-	if (extra_data_size != 0) {
-		/* We didn't skip everything, or we skipped too much; either way,
-		   there's an error in this parsing function. */
-
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_PROGRAMMER,
-				"unsupported structure of file header extra data");
-		return ARCHIVE_FATAL;
+	if(extra_data_size > 0) {
+		if(ARCHIVE_OK != consume(a, extra_data_size))
+			return ARCHIVE_EOF;
 	}
 
 	return ARCHIVE_OK;
@@ -2201,8 +2168,14 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	rar5->info.redir_type = (int) rar5->file.redir_type;
 	memcpy(rar5->info_name, name_utf8_buf, name_size);
 	rar5->info_name[name_size] = 0;
+	if(rar5->file.version != 0) {
+		/* As unRAR names a file version: "name;N". */
+		snprintf(rar5->info_name + name_size,
+		    sizeof(rar5->info_name) - name_size, ";%ju",
+		    (uintmax_t) rar5->file.version);
+	}
 	rar5->info.name = rar5->info_name;
-	rar5->info.name_size = name_size;
+	rar5->info.name_size = strlen(rar5->info_name);
 
 	if(rar5->generic.split_before > 0) {
 		/* A continuation piece reached by reading the next header (the
@@ -2718,57 +2691,27 @@ static int skip_base_block(struct archive_read* a) {
 static int try_skip_sfx(struct archive_read *a)
 {
 	const char *p;
+	char signature[sizeof(rar5_signature_xor)];
+	int is_rar5 = 0;
+	int64_t offset;
 
-	if ((p = __archive_read_ahead(a, 7, NULL)) == NULL)
+	if ((p = __archive_read_ahead(a, 8, NULL)) == NULL)
 		return ARCHIVE_EOF;
 
-	if ((p[0] == 'M' && p[1] == 'Z') || memcmp(p, "\x7F\x45LF", 4) == 0)
-	{
-		char signature[sizeof(rar5_signature_xor)];
-		const void *h;
-		const char *q;
-		size_t skip, total = 0;
-		ssize_t bytes, window = 4096;
+	rar5_signature(signature);
+	if (memcmp(p, signature, sizeof(signature)) == 0)
+		return ARCHIVE_OK;
 
-		rar5_signature(signature);
-
-		while (total + window <= SFX_MAX_READAHEAD) {
-			h = __archive_read_ahead(a, window, &bytes);
-			if (h == NULL) {
-				/* Remaining bytes are less than window. */
-				window >>= 1;
-				if (window < 0x40)
-					goto fatal;
-				continue;
-			}
-			if (bytes < 0x40)
-				goto fatal;
-			p = h;
-			q = p + bytes;
-
-			/*
-			 * Scan ahead until we find something that looks
-			 * like the RAR header.
-			 */
-			while (p + 8 < q) {
-				if (memcmp(p, signature, sizeof(signature)) == 0) {
-					skip = p - (const char *)h;
-					__archive_read_consume(a, skip);
-					return (ARCHIVE_OK);
-				}
-				p += 0x10;
-			}
-			skip = p - (const char *)h;
-			__archive_read_consume(a, skip);
-			total += skip;
-		}
+	/* Self-extracting, or other data before the archive: skip to the
+	 * signature, as unRAR does. */
+	offset = __archive_rar_find_signature(a, &is_rar5);
+	if (offset < 0 || !is_rar5) {
+		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+		    "Couldn't find out RAR header");
+		return (ARCHIVE_FATAL);
 	}
-
+	__archive_read_consume(a, offset);
 	return ARCHIVE_OK;
-fatal:
-	archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-			"Couldn't find out RAR header");
-	return (ARCHIVE_FATAL);
 }
 
 static int rar5_read_header(struct archive_read *a,

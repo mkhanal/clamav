@@ -141,6 +141,7 @@
 #define MAX_SYMBOLS       20
 
 #define SFX_MAX_READAHEAD (1024 * 512)
+#define RAR_SFX_SEARCH_SIZE 0x200000
 
 /* Virtual Machine Properties */
 #define VM_MEMORY_SIZE 0x40000
@@ -402,6 +403,7 @@ struct rar
   /* Solid archives: the decoder state can carry over to the next entry,
    * whose data then starts at solid_base in the window. */
   char solid_state_valid;
+  char end_marker_read;
   int64_t solid_base;
 
   /* Raw header fields for archive_read_rar_entry_info(). */
@@ -825,30 +827,12 @@ archive_read_format_rar_bid(struct archive_read *a, int best_bid)
   if (memcmp(h, RAR_SIGNATURE, 7) == 0)
     return (30);
 
-  if ((h[0] == 'M' && h[1] == 'Z') || memcmp(h, "\x7F\x45LF", 4) == 0) {
-    /* This is a PE file */
-    ssize_t offset = 0x10000;
-    ssize_t window = 4096;
-    ssize_t bytes_avail;
-
-    while (offset + window <= SFX_MAX_READAHEAD) {
-      h = __archive_read_ahead(a, offset + window, &bytes_avail);
-      if (h == NULL) {
-        if (bytes_avail >= offset + 0x10) {
-          /* Remaining bytes are less than window. */
-          window = bytes_avail - offset;
-          continue;
-        }
-        return (0);
-      }
-      if (bytes_avail > SFX_MAX_READAHEAD)
-        bytes_avail = SFX_MAX_READAHEAD;
-      while (offset <= bytes_avail - 7) {
-        if (memcmp(h + offset, RAR_SIGNATURE, 7) == 0)
-          return (30);
-        offset += 0x10;
-      }
-    }
+  /* A self-extracting archive: the first signature, of either kind,
+   * decides, as in unRAR. */
+  {
+    int is_rar5 = 0;
+    if (__archive_rar_find_signature(a, &is_rar5) >= 0 && !is_rar5)
+      return (30);
   }
   return (0);
 }
@@ -856,47 +840,16 @@ archive_read_format_rar_bid(struct archive_read *a, int best_bid)
 static int
 skip_sfx(struct archive_read *a)
 {
-  const void *h;
-  const char *p, *q;
-  size_t skip, total;
-  ssize_t bytes, window;
+  int is_rar5 = 0;
+  int64_t offset = __archive_rar_find_signature(a, &is_rar5);
 
-  total = 0;
-  window = 4096;
-  while (total + window <= SFX_MAX_READAHEAD) {
-    h = __archive_read_ahead(a, window, &bytes);
-    if (h == NULL) {
-      /* Remaining bytes are less than window. */
-      window >>= 1;
-      if (window < 0x40)
-      	goto fatal;
-      continue;
-    }
-    if (bytes < 0x40)
-      goto fatal;
-    p = h;
-    q = p + bytes;
-
-    /*
-     * Scan ahead until we find something that looks
-     * like the RAR header.
-     */
-    while (p + 7 < q) {
-      if (memcmp(p, RAR_SIGNATURE, 7) == 0) {
-      	skip = p - (const char *)h;
-      	__archive_read_consume(a, skip);
-      	return (ARCHIVE_OK);
-      }
-      p += 0x10;
-    }
-    skip = p - (const char *)h;
-    __archive_read_consume(a, skip);
-    total += skip;
+  if (offset < 0 || is_rar5) {
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+        "Couldn't find out RAR header");
+    return (ARCHIVE_FATAL);
   }
-fatal:
-  archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-      "Couldn't find out RAR header");
-  return (ARCHIVE_FATAL);
+  __archive_read_consume(a, offset);
+  return (ARCHIVE_OK);
 }
 
 static int
@@ -963,9 +916,8 @@ archive_read_format_rar_read_header(struct archive_read *a,
     return (ARCHIVE_EOF);
 
   p = h;
-  if (rar->found_first_header == 0 &&
-     ((p[0] == 'M' && p[1] == 'Z') || memcmp(p, "\x7F\x45LF", 4) == 0)) {
-    /* This is an executable ? Must be self-extracting... */
+  if (rar->found_first_header == 0 && memcmp(p, RAR_SIGNATURE, 7) != 0) {
+    /* Self-extracting, or other data before the archive. */
     ret = skip_sfx(a);
     if (ret < ARCHIVE_WARN)
       return (ret);
@@ -1036,7 +988,10 @@ archive_read_format_rar_read_header(struct archive_read *a,
         return (ARCHIVE_FATAL);
       }
 
-      crc32_val = __archive_crc32(0, (const unsigned char *)p + 2, (unsigned)skip - 2);
+      /* RAR 1.5-2.x embed the comment block in the main header and
+       * cover only the 13-byte main header with its CRC. */
+      crc32_val = __archive_crc32(0, (const unsigned char *)p + 2,
+          (rar->main_flags & MHD_COMMENT) ? 13 - 2 : (unsigned)skip - 2);
       if ((crc32_val & 0xffff) != archive_le16dec(p)) {
 #ifndef DONT_FAIL_ON_CRC_ERROR
         archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
@@ -1099,13 +1054,10 @@ archive_read_format_rar_read_header(struct archive_read *a,
         __archive_read_consume(a, to_read);
         skip -= to_read;
       }
-      if ((crc32_val & 0xffff) != crc32_expected) {
-#ifndef DONT_FAIL_ON_CRC_ERROR
-        archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-          "Header CRC error");
-        return (ARCHIVE_FATAL);
-#endif
-      }
+      /* A damaged block that carries no file is passed over, as
+       * unRAR passes over it. */
+      (void)crc32_val;
+      (void)crc32_expected;
       /* The end of a volume whose set goes on: when the next volume
        * follows in the stream, its entries come next, as unRAR lists
        * them. */
@@ -1523,6 +1475,46 @@ archive_read_rar_comment_info(struct archive *_a,
   return (__archive_read_rar5_comment_info(_a, info));
 }
 
+/*
+ * Where the first RAR signature of either kind starts, searching the first
+ * 2 MB byte by byte as unRAR does for self-extracting archives. Returns -1
+ * when there is none; *is_rar5 tells which kind was found.
+ */
+int64_t
+__archive_rar_find_signature(struct archive_read *a, int *is_rar5)
+{
+  const unsigned char *h, *p;
+  ssize_t avail;
+  size_t want = RAR_SFX_SEARCH_SIZE;
+  size_t i;
+
+  h = __archive_read_ahead(a, want, &avail);
+  if (h == NULL) {
+    if (avail <= 0)
+      return (-1);
+    want = (size_t)avail;
+    h = __archive_read_ahead(a, want, &avail);
+    if (h == NULL)
+      return (-1);
+  }
+  if ((size_t)avail > want)
+    avail = (ssize_t)want;
+  for (i = 0; i + 7 <= (size_t)avail; i++) {
+    p = h + i;
+    if (p[0] != 'R' || memcmp(p, "Rar!\x1a\x07", 6) != 0)
+      continue;
+    if (p[6] == 0x00) {
+      *is_rar5 = 0;
+      return ((int64_t)i);
+    }
+    if (p[6] == 0x01 && i + 8 <= (size_t)avail && p[7] == 0x00) {
+      *is_rar5 = 1;
+      return ((int64_t)i);
+    }
+  }
+  return (-1);
+}
+
 uint32_t
 archive_rar_crc32(const void *data, size_t size)
 {
@@ -1616,8 +1608,18 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     return (ARCHIVE_FATAL);
   }
 
-  /* File Header CRC check. */
-  crc32_computed = __archive_crc32(crc32_computed, h, (unsigned)(header_size - 7));
+  /* File Header CRC check. With a file comment (RAR 1.5-2.x) the CRC
+   * covers the header up to the end of the name only. */
+  {
+    size_t crc_size = (size_t)(header_size - 7);
+    if ((rar->file_flags & FHD_COMMENT) && crc_size >= sizeof(file_header)) {
+      size_t name_end = sizeof(file_header) +
+          archive_le16dec((const char *)h + 19);
+      if (name_end < crc_size)
+        crc_size = name_end;
+    }
+    crc32_computed = __archive_crc32(crc32_computed, h, (unsigned)crc_size);
+  }
   crc32_read = archive_le16dec(rar_header.crc);
   if ((crc32_computed & 0xffff) != crc32_read) {
 #ifndef DONT_FAIL_ON_CRC_ERROR
@@ -2052,6 +2054,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     memset(rar->lengthtable, 0, sizeof(rar->lengthtable));
     __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
     rar->ppmd_valid = 0;
+    rar->ppmd_escape = 2;
     rar->filters.filterstart = INT64_MAX;
   }
   /*
@@ -2061,6 +2064,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
    */
   if (rar->compression_method != COMPRESS_METHOD_STORE)
     rar->solid_state_valid = 1;
+  rar->end_marker_read = 0;
   rar->solid_base = rar->lzss.position;
   rar->offset = rar->lzss.position;
   rar->offset_seek = 0;
@@ -2297,6 +2301,32 @@ read_data_stored(struct archive_read *a, const void **buff, size_t *size,
   return (ARCHIVE_OK);
 }
 
+static void
+read_end_marker(struct archive_read *a)
+{
+  struct rar *rar = a->format->data;
+  struct rar_br *br = &(rar->br);
+  int symbol;
+
+  rar->end_marker_read = 1;
+  if (rar->start_new_table || rar->maincode.tree == NULL)
+    return;
+  if ((symbol = read_next_symbol(a, &rar->maincode)) != 256)
+    return;
+  if (!rar_br_read_ahead(a, br, 2))
+    return;
+  if (rar_br_bits(br, 1)) {
+    /* "1": new tables follow right here, in this entry's data. */
+    rar_br_consume(br, 1);
+    (void)parse_codes(a);
+  } else {
+    /* "0x": new entry, x says whether it starts with new tables. */
+    rar_br_consume(br, 1);
+    rar->start_new_table = rar_br_bits(br, 1);
+    rar_br_consume(br, 1);
+  }
+}
+
 static int
 read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
                      int64_t *offset, size_t looper)
@@ -2343,6 +2373,15 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
        (rar->dictionary_size &&
         rar->offset - rar->solid_base >= rar->unp_size))
     {
+      /*
+       * The output can be complete before the end-of-entry marker that
+       * follows it was decoded (a filter can end the last block). The
+       * marker says whether the next entry of a solid archive starts with
+       * new tables, so read it, as unRAR does.
+       */
+      if (!rar->ppmd_eod && !rar->is_ppmd_block && !rar->end_marker_read &&
+          (rar->main_flags & MHD_SOLID))
+        read_end_marker(a);
       if (rar->unp_offset > 0) {
         /*
          * We have unprocessed extracted data. write it out.
@@ -2511,8 +2550,8 @@ parse_codes(struct archive_read *a)
       rar->ppmd_escape = rar->ppmd7_context.InitEsc = rar_br_bits(br, 8);
       rar_br_consume(br, 8);
     }
-    else
-      rar->ppmd_escape = 2;
+    /* Otherwise the escape stays as it was: 2 from the start of a
+     * non-solid entry, or what an earlier block of the solid stream set. */
 
     if (ppmd_flags & 0x20)
     {
@@ -3171,6 +3210,7 @@ expand(struct archive_read *a, int64_t *end)
           goto truncated_data;
         rar->start_new_table = rar_br_bits(br, 1);
         rar_br_consume(br, 1);
+        rar->end_marker_read = 1;
         *end = lzss_position(&rar->lzss);
         return (ARCHIVE_OK);
       }
@@ -3349,8 +3389,11 @@ expand_ppmd(struct archive_read *a, int64_t *end)
         break;
 
       case 2:
-        /* End of PPMd data. */
+        /* End of the entry's PPMd data. The next entry of a solid archive
+         * starts with a block header that restarts the range decoder
+         * (and may keep the model). */
         rar->ppmd_eod = 1;
+        rar->start_new_table = 1;
         *end = lzss_position(&rar->lzss);
         return (ARCHIVE_OK);
 
@@ -3749,7 +3792,7 @@ run_filters(struct archive_read *a)
   ret = copy_from_lzss_window(a, filters->vm->memory, start, filter->blocklength);
   if (ret != ARCHIVE_OK)
     return 0;
-  if (!execute_filter(a, filter, filters->vm, (size_t)rar->offset))
+  if (!execute_filter(a, filter, filters->vm, (size_t)(rar->offset - rar->solid_base)))
     return 0;
 
   lastfilteraddress = filter->filteredblockaddress;
@@ -3761,7 +3804,7 @@ run_filters(struct archive_read *a)
   while ((filter = filters->stack) != NULL && (int64_t)filter->blockstartpos == filters->filterstart && filter->blocklength == lastfilterlength)
   {
     memmove(&filters->vm->memory[0], &filters->vm->memory[lastfilteraddress], lastfilterlength);
-    if (!execute_filter(a, filter, filters->vm, (size_t)rar->offset))
+    if (!execute_filter(a, filter, filters->vm, (size_t)(rar->offset - rar->solid_base)))
       return 0;
 
     lastfilteraddress = filter->filteredblockaddress;
