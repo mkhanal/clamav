@@ -124,6 +124,9 @@ struct archive_rar_skip_limit {
 
 #define ARCHIVE_RAR_ERRNO_SKIP_LIMIT	0x5201
 
+/* The entry's data uses a compression method that is not available. */
+#define ARCHIVE_RAR_ERRNO_UNSUPPORTED	0x5202
+
 int archive_read_rar_skip_data(struct archive *,
     const struct archive_rar_skip_limit *);
 
