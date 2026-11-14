@@ -47,7 +47,11 @@ jobs:
 
       - name: Test
         working-directory: build
-        run: ctest --output-on-failure --parallel 4 --exclude-regex "^(clamd|libclamav_rust)$"
+        run: |
+          ctest --output-on-failure --parallel 4 --exclude-regex "^(clamd|libclamav_rust)$" || {
+            (cd unit_tests && ASAN_OPTIONS="$ASAN_OPTIONS:verbosity=1" ./check_clamav 2>&1 | tail -80)
+            exit 1
+          }
 
       - name: Scan the RAR test set
         run: |
