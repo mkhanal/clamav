@@ -171,6 +171,23 @@ class TC(testcase.TestCase):
         assert output.ec == 1  # virus
         self.verify_output(output.out, expected=['{}: PendingFilterMarker.UNOFFICIAL FOUND'.format(testfile)])
 
+    def test_skipping_in_a_solid_archive_is_bounded(self):
+        self.step_name('Test the work of skipping entries of a solid archive is bounded by the scan size')
+
+        # big1.txt and big2.txt each exceed --max-filesize and are skipped;
+        # marker.txt follows them in the same solid stream. The libarchive
+        # backend decodes what it skips, which costs as much as scanning
+        # it would, so --max-scansize bounds it: 3M leaves room for one of
+        # them. The scan reports the limit instead of coming back clean.
+        for archive in ('rar4-solid-skip-budget.rar', 'rar5-solid-skip-budget.rar'):
+            with self.subTest(archive=archive):
+                testfile = TC.path_rar / archive
+                output = self.scan(testfile, '--max-filesize=1M --max-scansize=3M --alert-exceeds-max=yes')
+
+                assert output.ec == 1  # virus
+                self.verify_output(output.out, expected=[
+                    '{}: Heuristics.Limits.Exceeded.MaxFileSize FOUND'.format(testfile)])
+
     def test_archive_comment_is_scanned(self):
         self.step_name('Test RAR 2.9 (packed) and RAR5 archive comments are scanned')
 

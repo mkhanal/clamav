@@ -57,6 +57,12 @@
 #include <sys/types.h>
 #include <wchar.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/time.h>
+#endif
+
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -128,6 +134,9 @@ typedef struct unrar_handle_tag {
     char **volumes;
     size_t volume_count;
     uint32_t rar5_hash32; /* unRAR's RAR5 hash field keeps its last value. */
+    int skip_bytes_limited;
+    uint64_t skip_bytes_left; /* Decoding skipped entries may still cost this much. */
+    uint64_t skip_deadline_usec;
 } unrar_handle_t;
 
 /*
@@ -1094,16 +1103,48 @@ static int entry_has_no_output(const struct archive_rar_entry_info *info)
     return info->split_before || info->redir_type != ARCHIVE_RAR_REDIR_NONE;
 }
 
+static uint64_t now_usec(void)
+{
+#ifdef _WIN32
+    FILETIME ft;
+    ULARGE_INTEGER t;
+
+    GetSystemTimeAsFileTime(&ft);
+    t.LowPart  = ft.dwLowDateTime;
+    t.HighPart = ft.dwHighDateTime;
+    /* 100 ns ticks since 1601 to microseconds since 1970. */
+    return (t.QuadPart - 116444736000000000ULL) / 10;
+#else
+    struct timeval tv;
+
+    (void)gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000000 + (uint64_t)tv.tv_usec;
+#endif
+}
+
+static int skip_deadline_passed(void *ctx)
+{
+    const unrar_handle_t *h = ctx;
+
+    return h->skip_deadline_usec != 0 && now_usec() > h->skip_deadline_usec;
+}
+
 static cl_unrar_error_t skip_current(unrar_handle_t *h)
 {
-    int r = archive_read_data_skip(h->archive);
+    struct archive_rar_skip_limit limit;
+    int r;
+
+    limit.budget   = h->skip_bytes_limited ? &h->skip_bytes_left : NULL;
+    limit.stop     = h->skip_deadline_usec != 0 ? skip_deadline_passed : NULL;
+    limit.stop_ctx = h;
+    r              = archive_read_rar_skip_data(h->archive, &limit);
 
     h->state = HEADER_NONE;
     if (r < ARCHIVE_WARN) {
         unrar_dbgmsg("unrar_skip_file: %s\n", archive_error_string(h->archive));
-        h->status = UNRAR_ERR;
+        h->status = archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_SKIP_LIMIT ? UNRAR_ELIMIT : UNRAR_ERR;
         h->state  = HEADER_DONE;
-        return UNRAR_ERR;
+        return h->status;
     }
     return UNRAR_OK;
 }
@@ -1221,6 +1262,20 @@ cl_unrar_error_t unrar_skip_file(void *hArchive)
         return UNRAR_ERR;
     }
     unrar_dbgmsg("unrar_skip_file: File skipped.\n");
+    return UNRAR_OK;
+}
+
+cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint64_t deadline_usec)
+{
+    unrar_handle_t *h = (unrar_handle_t *)hArchive;
+
+    if (NULL == h) {
+        unrar_dbgmsg("unrar_set_skip_limits: Invalid arguments.\n");
+        return UNRAR_ERR;
+    }
+    h->skip_bytes_limited   = max_bytes != 0;
+    h->skip_bytes_left      = max_bytes;
+    h->skip_deadline_usec   = deadline_usec;
     return UNRAR_OK;
 }
 
