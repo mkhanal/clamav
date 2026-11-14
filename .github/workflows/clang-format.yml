@@ -1,24 +1,27 @@
 name: clang-format
 
-# Controls when the action will run. Triggers the workflow on push or pull request
-# events but only for the master branch
 on:
   push:
     branches:
-      - rel/*
-      - dev/*
-      - main
+      - release/**
   pull_request:
     branches:
-      - rel/*
-      - dev/*
-      - main
+      - release/**
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   formatting-check:
-    name: check
-    runs-on: ubuntu-latest
+    name: check ${{ matrix.path.check }}
+    runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
         path:
           - check: "libclamav"
@@ -55,10 +58,12 @@ jobs:
             exclude: ""
           - check: "win32/compat"
             exclude: ""
+          - check: "libclamunrar_iface"
+            exclude: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run clang-format style check for C/C++ programs.
-        uses: jidicula/clang-format-action@v4.13.0
+        uses: jidicula/clang-format-action@654a770daa28443dd111d133e4083e21c1075674 # v4.18.0
         with:
           clang-format-version: "16"
           check-path: ${{ matrix.path['check'] }}
