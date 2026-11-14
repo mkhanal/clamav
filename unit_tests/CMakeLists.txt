@@ -23,11 +23,14 @@ endif()
 # The library the unrar interface is built on: RARLAB's libclamunrar, or the
 # vendored libarchive when ENABLE_UNRAR_LIBARCHIVE is set.
 set(UNRAR_TEST_DEPENDS "")
+set(UNRAR_BACKEND "none")
 if (ENABLE_UNRAR)
     if (ENABLE_UNRAR_LIBARCHIVE)
+        set(UNRAR_BACKEND "libarchive")
         set(UNRAR_TEST_DEPENDS ClamAV::libunrar_iface)
         set(UNRAR_BACKEND_STATIC_FILE $<TARGET_PROPERTY:clamav_libarchive_static,IMPORTED_LOCATION>)
     else()
+        set(UNRAR_BACKEND "rarlab")
         set(UNRAR_TEST_DEPENDS ClamAV::libunrar ClamAV::libunrar_iface)
         set(UNRAR_BACKEND_STATIC_FILE $<TARGET_FILE:clamunrar_static>)
     endif()
@@ -307,6 +310,7 @@ set(ENVIRONMENT
     LIBCLAMMSPACK=${LIBCLAMMSPACK}
     LIBCLAMUNRARIFACE=${LIBCLAMUNRARIFACE}
     LIBCLAMUNRAR=${LIBCLAMUNRAR}
+    UNRAR_BACKEND=${UNRAR_BACKEND}
     CHECK_CLAMAV=${CHECK_CLAMAV}
     CHECK_CLAMD=${CHECK_CLAMD}
     CHECK_FPU_ENDIAN=${CHECK_FPU_ENDIAN}
