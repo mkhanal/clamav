@@ -350,6 +350,9 @@ struct rar5 {
 	 * calculation functions. */
 	int skip_mode;
 
+	/* Set while archive_read_rar_skip_data() is skipping. */
+	const struct archive_rar_skip_limit *skip_limit;
+
 	/* Set to not zero if we're in block merging mode (i.e. when switching
 	 * to another file in multivolume archive, last block from 1st archive
 	 * needs to be merged with 1st block from 2nd archive). This flag
@@ -4580,6 +4583,11 @@ static int rar5_read_data_skip(struct archive_read *a) {
 
 		/* Make sure to process all blocks in the compressed stream. */
 		while(rar5->file.bytes_remaining > 0) {
+			int64_t written = rar5->cstate.last_write_ptr;
+
+			if(__archive_rar_skip_limit_hit(a, rar5->skip_limit, 0))
+				return ARCHIVE_FATAL;
+
 			/* Setting the "skip mode" will allow us to skip
 			 * checksum checks during data skipping. Checking the
 			 * checksum of skipped data isn't really necessary and
@@ -4596,6 +4604,11 @@ static int rar5_read_data_skip(struct archive_read *a) {
 
 			/* Turn off "skip mode". */
 			rar5->skip_mode--;
+
+			written = rar5->cstate.last_write_ptr - written;
+			if(written > 0 && __archive_rar_skip_limit_hit(a,
+			    rar5->skip_limit, (uint64_t)written))
+				return ARCHIVE_FATAL;
 
 			if(ret < 0 || ret == ARCHIVE_EOF) {
 				/* Propagate any potential error conditions
@@ -4741,6 +4754,21 @@ rar5_info_state(struct archive *_a)
 	    strcmp(a->format->name, "rar5") != 0 || a->format->data == NULL)
 		return NULL;
 	return (struct rar5 *) a->format->data;
+}
+
+int
+__archive_read_rar5_skip_data(struct archive *_a,
+    const struct archive_rar_skip_limit *limit)
+{
+	struct rar5 *rar5 = rar5_info_state(_a);
+	int ret;
+
+	if(rar5 == NULL)
+		return ARCHIVE_FATAL;
+	rar5->skip_limit = limit;
+	ret = archive_read_data_skip(_a);
+	rar5->skip_limit = NULL;
+	return ret;
 }
 
 int
