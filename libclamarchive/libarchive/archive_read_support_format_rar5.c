@@ -2823,26 +2823,25 @@ static int create_decode_tables(uint8_t* bit_length,
 {
 	int code, upper_limit = 0, i, lc[16];
 	uint32_t decode_pos_clone[rar5_countof(table->decode_pos)];
+	int32_t decode_len[rar5_countof(table->decode_len)];
+	uint32_t decode_pos[rar5_countof(table->decode_pos)];
 	ssize_t cur_len, quick_data_size;
 
 	memset(&lc, 0, sizeof(lc));
-	memset(table->decode_num, 0, sizeof(table->decode_num));
-	table->size = size;
-	table->quick_bits = size == HUFF_NC ? 10 : 7;
 
 	for(i = 0; i < size; i++) {
 		lc[bit_length[i] & 15]++;
 	}
 
 	lc[0] = 0;
-	table->decode_pos[0] = 0;
-	table->decode_len[0] = 0;
+	decode_pos[0] = 0;
+	decode_len[0] = 0;
 
 	for(i = 1; i < 16; i++) {
 		upper_limit += lc[i];
 
-		table->decode_len[i] = upper_limit << (16 - i);
-		table->decode_pos[i] = table->decode_pos[i - 1] + lc[i - 1];
+		decode_len[i] = upper_limit << (16 - i);
+		decode_pos[i] = decode_pos[i - 1] + lc[i - 1];
 
 		upper_limit <<= 1;
 	}
@@ -2851,10 +2850,19 @@ static int create_decode_tables(uint8_t* bit_length,
 	 * After the loop above, upper_limit == sum(lc[i] * 2^(16-i)).
 	 * For a valid prefix-free code this must be <= 2^16 = 65536.
 	 * An over-subscribed table (> 65536) cannot produce a valid
-	 * decode table and must be rejected. */
+	 * decode table and must be rejected. The table is left as it was:
+	 * a solid archive goes on decoding with the tables of the previous
+	 * block, and a table that is only partly rebuilt decodes symbols
+	 * without consuming any bits. */
 	if(upper_limit > 65536) {
 		return ARCHIVE_FAILED;
 	}
+
+	memset(table->decode_num, 0, sizeof(table->decode_num));
+	table->size = size;
+	table->quick_bits = size == HUFF_NC ? 10 : 7;
+	memcpy(table->decode_len, decode_len, sizeof(decode_len));
+	memcpy(table->decode_pos, decode_pos, sizeof(decode_pos));
 
 	memcpy(decode_pos_clone, table->decode_pos, sizeof(decode_pos_clone));
 
