@@ -19,8 +19,9 @@ Compare:
 
 The exit status is non-zero when build B detects less than A, reports clean where A alerted or errored, or differs
 from the manifest's expected outcome. `--report-only` prints the table and exits 0 (baseline); `--only REGEX`
-selects rows; `--no-runtime` skips the large archives generated at scan time. `selftest.sh` proves the comparison
-fails when it should. `baseline-unrar.txt` is the unRAR build's table.
+selects rows; `--no-runtime` skips the large archives generated at scan time. `--extra-options="FLAGS"` adds clamscan
+flags (shell-quoted, e.g. `--extra-options="--alert-incomplete-rar=yes"`) to the command for both builds, so the two
+verdicts stay comparable. `selftest.sh` proves the comparison fails when it should. `baseline-unrar.txt` is the unRAR build's table.
 
 ## Contents
 
