@@ -53,6 +53,9 @@
 #include "archive_blake2.h"
 #endif
 
+#include "archive_read_private.h"
+#include "archive_read_rar_info.h"
+
 /*#define CHECK_CRC_ON_SOLID_SKIP*/
 /*#define DONT_FAIL_ON_CRC_ERROR*/
 /*#define DEBUG*/
@@ -113,6 +116,7 @@ struct file_header {
 	uint8_t service : 1;         /* Is this file a service data? */
 	uint8_t eof : 1;             /* Did we finish unpacking the file? */
 	uint8_t dir : 1;             /* Is this file entry a directory? */
+	uint8_t encrypted : 1;       /* Is the data encrypted? */
 
 	/* Optional time fields. */
 	int64_t e_mtime;
@@ -379,6 +383,14 @@ struct rar5 {
 	 */
 	int has_encrypted_entries;
 	int headers_are_encrypted;
+
+	/* Raw header fields for archive_read_rar_entry_info(). */
+	struct archive_rar_entry_info info;
+	char info_name[MAX_NAME_IN_BYTES];
+
+	/* First archive comment, for archive_read_rar_comment_info(). */
+	struct archive_rar_comment_info comment;
+	void *comment_data;
 };
 
 /* Forward function declarations. */
@@ -1756,6 +1768,7 @@ static int process_head_file_extra(struct archive_read* a,
 				archive_entry_set_is_data_encrypted(e, 1);
 				rar5->has_encrypted_entries = 1;
 				rar5->cstate.data_encrypted = 1;
+				rar5->file.encrypted = 1;
 				/* fallthrough */
 			case EX_SUBDATA:
 				/* fallthrough */
@@ -2161,6 +2174,35 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 		rar5->cstate.initialized = 0;
 	}
 
+	memset(&rar5->info, 0, sizeof(rar5->info));
+	rar5->info.format = ARCHIVE_RAR_INFO_FORMAT_RAR5;
+	rar5->info.packed_size = data_size;
+	rar5->info.unpacked_size = unpacked_size;
+	rar5->info.unpacked_size_unknown =
+	    (file_flags & UNKNOWN_UNPACKED_SIZE) != 0;
+	rar5->info.crc32 = crc;
+	rar5->info.crc32_present = (file_flags & CRC32) != 0;
+	if(rar5->file.has_blake2) {
+		memcpy(rar5->info.blake2sp, rar5->file.blake2sp,
+		    sizeof(rar5->info.blake2sp));
+		rar5->info.blake2sp_present = 1;
+	}
+	rar5->info.method = (unsigned) c_method;
+	rar5->info.unp_ver = (unsigned) c_version;
+	rar5->info.host_os = (unsigned) host_os;
+	rar5->info.flags = (unsigned) file_flags;
+	rar5->info.attributes = file_attr;
+	rar5->info.is_dir = rar5->file.dir;
+	rar5->info.is_encrypted = rar5->file.encrypted;
+	rar5->info.is_solid = rar5->file.solid;
+	rar5->info.split_before = rar5->generic.split_before;
+	rar5->info.split_after = rar5->generic.split_after;
+	rar5->info.redir_type = (int) rar5->file.redir_type;
+	memcpy(rar5->info_name, name_utf8_buf, name_size);
+	rar5->info_name[name_size] = 0;
+	rar5->info.name = rar5->info_name;
+	rar5->info.name_size = name_size;
+
 	if(rar5->generic.split_before > 0) {
 		/* If now we're standing on a header that has a 'split before'
 		 * mark, it means we're standing on a 'continuation' file
@@ -2183,6 +2225,42 @@ static int process_head_service(struct archive_read* a, struct rar5 *rar5,
 		return ret;
 
 	rar5->file.service = 1;
+
+	/* The first CMT service block is the archive comment. */
+	if(!rar5->comment.present && rar5->info.name_size == 3 &&
+	    memcmp(rar5->info.name, "CMT", 3) == 0) {
+		const uint8_t* d = NULL;
+		size_t keep = (size_t) rar5->file.bytes_remaining;
+
+		if(keep > ARCHIVE_RAR_COMMENT_MAX)
+			keep = ARCHIVE_RAR_COMMENT_MAX;
+		if(keep > 0 && !read_ahead(a, keep, &d))
+			keep = 0;
+
+		free(rar5->comment_data);
+		rar5->comment_data = NULL;
+		if(keep > 0) {
+			rar5->comment_data = malloc(keep);
+			if(rar5->comment_data == NULL) {
+				archive_set_error(&a->archive, ENOMEM,
+				    "Can't allocate comment");
+				return ARCHIVE_FATAL;
+			}
+			memcpy(rar5->comment_data, d, keep);
+		}
+		memset(&rar5->comment, 0, sizeof(rar5->comment));
+		rar5->comment.present = 1;
+		rar5->comment.format = ARCHIVE_RAR_INFO_FORMAT_RAR5;
+		rar5->comment.method = rar5->info.method;
+		rar5->comment.unp_ver = rar5->info.unp_ver;
+		rar5->comment.unpacked_size = rar5->info.unpacked_size;
+		rar5->comment.crc = rar5->info.crc32;
+		rar5->comment.crc_present = rar5->info.crc32_present;
+		rar5->comment.is_encrypted = rar5->info.is_encrypted;
+		rar5->comment.data = rar5->comment_data;
+		rar5->comment.size = keep;
+		rar5->comment.packed_size = rar5->info.packed_size;
+	}
 
 	/* But skip the data part automatically. It's no use for the user
 	 * anyway.  It contains only service data, not even needed to
@@ -4599,6 +4677,7 @@ static int rar5_cleanup(struct archive_read *a) {
 	clear_data_ready_stack(rar5);
 
 	free(rar5->vol.push_buf);
+	free(rar5->comment_data);
 
 	free_filters(rar5);
 	rar5_deinit(rar5);
@@ -4687,4 +4766,40 @@ int archive_read_support_format_rar5(struct archive *_a) {
 		free(rar5);
 	}
 	return r;
+}
+
+static struct rar5 *
+rar5_info_state(struct archive *_a)
+{
+	struct archive_read *a = (struct archive_read *)_a;
+
+	if(_a == NULL || _a->magic != ARCHIVE_READ_MAGIC ||
+	    a->format == NULL || a->format->name == NULL ||
+	    strcmp(a->format->name, "rar5") != 0 || a->format->data == NULL)
+		return NULL;
+	return (struct rar5 *) a->format->data;
+}
+
+int
+__archive_read_rar5_entry_info(struct archive *_a,
+    struct archive_rar_entry_info *info)
+{
+	struct rar5 *rar5 = rar5_info_state(_a);
+
+	if(rar5 == NULL)
+		return ARCHIVE_FATAL;
+	*info = rar5->info;
+	return ARCHIVE_OK;
+}
+
+int
+__archive_read_rar5_comment_info(struct archive *_a,
+    struct archive_rar_comment_info *info)
+{
+	struct rar5 *rar5 = rar5_info_state(_a);
+
+	if(rar5 == NULL)
+		return ARCHIVE_FATAL;
+	*info = rar5->comment;
+	return ARCHIVE_OK;
 }

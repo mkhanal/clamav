@@ -44,6 +44,7 @@
 #include "archive_ppmd7_private.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_read_rar_info.h"
 
 /* RAR signature, also known as the mark header */
 #define RAR_SIGNATURE "\x52\x61\x72\x21\x1A\x07\x00"
@@ -392,6 +393,15 @@ struct rar
    * Custom field to denote that this archive contains encrypted entries
    */
   int has_encrypted_entries;
+
+  /* Raw header fields for archive_read_rar_entry_info(). */
+  struct archive_rar_entry_info info;
+  char *info_name;
+  size_t info_name_allocated;
+
+  /* First archive comment, for archive_read_rar_comment_info(). */
+  struct archive_rar_comment_info comment;
+  void *comment_data;
 };
 
 static int archive_read_support_format_rar_capabilities(struct archive_read *);
@@ -410,6 +420,9 @@ static int archive_read_format_rar_cleanup(struct archive_read *);
 
 /* Support functions */
 static int read_header(struct archive_read *, struct archive_entry *, char);
+static int read_main_header_comment(struct archive_read *, const char *,
+    size_t);
+static int keep_comment(struct archive_read *, const void *, size_t);
 static time_t get_time(int);
 static int read_exttime(const char *, struct rar *, const char *);
 static int read_symlink_stored(struct archive_read *, struct archive_entry *,
@@ -985,6 +998,10 @@ archive_read_format_rar_read_header(struct archive_read *a,
       memcpy(rar->reserved1, p + 7, sizeof(rar->reserved1));
       memcpy(rar->reserved2, p + 7 + sizeof(rar->reserved1),
              sizeof(rar->reserved2));
+      if ((rar->main_flags & MHD_COMMENT) &&
+          !(rar->main_flags & MHD_PASSWORD) &&
+          read_main_header_comment(a, p, (size_t)skip) < ARCHIVE_WARN)
+        return (ARCHIVE_FATAL);
       if (rar->main_flags & MHD_ENCRYPTVER) {
         if ((size_t)skip <
             7 + sizeof(rar->reserved1) + sizeof(rar->reserved2) + 1) {
@@ -1354,10 +1371,126 @@ archive_read_format_rar_cleanup(struct archive_read *a)
   free(rar->dbo);
   free(rar->unp_buffer);
   free(rar->lzss.window);
+  free(rar->info_name);
+  free(rar->comment_data);
   __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
   free(rar);
   a->format->data = NULL;
   return (ARCHIVE_OK);
+}
+
+/*
+ * RAR 1.5-2.x keep the archive comment in a block inside the main header:
+ * its own 7-byte block header, then unpacked size, unpack version, method
+ * and the low 16 bits of the CRC32 of the unpacked comment.
+ */
+#define COMM_HEAD_OFFSET 13
+#define COMM_HEAD_SIZE 13
+
+static int
+read_main_header_comment(struct archive_read *a, const char *p, size_t size)
+{
+  struct rar *rar = a->format->data;
+  const char *c;
+  size_t block_size;
+
+  if (rar->comment.present || size < COMM_HEAD_OFFSET + COMM_HEAD_SIZE)
+    return (ARCHIVE_OK);
+  c = p + COMM_HEAD_OFFSET;
+  if ((unsigned char)c[2] != COMM_HEAD)
+    return (ARCHIVE_OK);
+  block_size = archive_le16dec(c + 5);
+  if (block_size < COMM_HEAD_SIZE ||
+      block_size > size - COMM_HEAD_OFFSET)
+    return (ARCHIVE_OK);
+
+  memset(&rar->comment, 0, sizeof(rar->comment));
+  rar->comment.format = ARCHIVE_RAR_INFO_FORMAT_RAR4;
+  rar->comment.in_main_header = 1;
+  rar->comment.unpacked_size = archive_le16dec(c + 7);
+  rar->comment.unp_ver = (unsigned char)c[9];
+  rar->comment.method = (unsigned char)c[10];
+  rar->comment.crc = archive_le16dec(c + 11);
+  rar->comment.crc_present = 1;
+  rar->comment.packed_size = block_size - COMM_HEAD_SIZE;
+  if (keep_comment(a, c + COMM_HEAD_SIZE, block_size - COMM_HEAD_SIZE)
+      != ARCHIVE_OK)
+    return (ARCHIVE_FATAL);
+  return (ARCHIVE_OK);
+}
+
+static int
+keep_comment(struct archive_read *a, const void *data, size_t size)
+{
+  struct rar *rar = a->format->data;
+
+  free(rar->comment_data);
+  rar->comment_data = NULL;
+  if (size > 0) {
+    if ((rar->comment_data = malloc(size)) == NULL) {
+      archive_set_error(&a->archive, ENOMEM, "Can't allocate comment");
+      return (ARCHIVE_FATAL);
+    }
+    memcpy(rar->comment_data, data, size);
+  }
+  rar->comment.data = rar->comment_data;
+  rar->comment.size = size;
+  rar->comment.present = 1;
+  return (ARCHIVE_OK);
+}
+
+static struct archive_read *
+rar_info_reader(struct archive *_a, const char *format_name)
+{
+  struct archive_read *a = (struct archive_read *)_a;
+
+  if (_a == NULL || _a->magic != ARCHIVE_READ_MAGIC ||
+      a->format == NULL || a->format->name == NULL ||
+      strcmp(a->format->name, format_name) != 0 ||
+      a->format->data == NULL)
+    return (NULL);
+  return (a);
+}
+
+int
+archive_read_rar_entry_info(struct archive *_a,
+    struct archive_rar_entry_info *info)
+{
+  struct archive_read *a;
+
+  if ((a = rar_info_reader(_a, "rar")) != NULL) {
+    *info = ((struct rar *)a->format->data)->info;
+    return (ARCHIVE_OK);
+  }
+  return (__archive_read_rar5_entry_info(_a, info));
+}
+
+int
+archive_read_rar_comment_info(struct archive *_a,
+    struct archive_rar_comment_info *info)
+{
+  struct archive_read *a;
+
+  if ((a = rar_info_reader(_a, "rar")) != NULL) {
+    *info = ((struct rar *)a->format->data)->comment;
+    return (ARCHIVE_OK);
+  }
+  return (__archive_read_rar5_comment_info(_a, info));
+}
+
+uint32_t
+archive_rar_crc32(const void *data, size_t size)
+{
+  uint32_t crc = 0;
+  const unsigned char *p = data;
+
+  while (size > 0) {
+    unsigned chunk = size > 0x40000000 ? 0x40000000 : (unsigned)size;
+    crc = (uint32_t)__archive_crc32(crc, p, chunk);
+    p += chunk;
+    size -= chunk;
+  }
+  return (crc);
 }
 
 static int
@@ -1509,11 +1642,41 @@ read_header(struct archive_read *a, struct archive_entry *entry,
 
   rar->bytes_remaining = rar->packed_size;
 
-  /* TODO: RARv3 subblocks contain comments. For now the complete block is
-   * consumed at the end.
-   */
+  filename_size = archive_le16dec(file_header.name_size);
+  if (p + filename_size > endp) {
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+      "Invalid filename size");
+    return (ARCHIVE_FATAL);
+  }
+
   if (head_type == NEWSUB_HEAD) {
     int64_t skip;
+
+    /* The first CMT service block is the archive comment. */
+    if (!rar->comment.present && filename_size == 3 &&
+        memcmp(p, "CMT", 3) == 0) {
+      const void *d;
+      size_t keep;
+
+      memset(&rar->comment, 0, sizeof(rar->comment));
+      rar->comment.format = ARCHIVE_RAR_INFO_FORMAT_RAR4;
+      rar->comment.unpacked_size = (uint64_t)rar->unp_size;
+      rar->comment.unp_ver = (unsigned char)file_header.unp_ver;
+      rar->comment.method = (unsigned char)file_header.method;
+      rar->comment.crc = (uint32_t)rar->file_crc;
+      rar->comment.crc_present = 1;
+      rar->comment.sub_flags = archive_le32dec(file_header.file_attr);
+      rar->comment.is_encrypted = (rar->file_flags & FHD_PASSWORD) != 0;
+      rar->comment.packed_size = (uint64_t)rar->packed_size;
+      keep = rar->packed_size > ARCHIVE_RAR_COMMENT_MAX ?
+          ARCHIVE_RAR_COMMENT_MAX : (size_t)rar->packed_size;
+      __archive_read_consume(a, header_size - 7);
+      header_size = 7;
+      if ((d = __archive_read_ahead(a, keep, NULL)) == NULL)
+        keep = 0;
+      if (keep_comment(a, d, keep) != ARCHIVE_OK)
+        return (ARCHIVE_FATAL);
+    }
     if (archive_ckd_add_i64(&skip, rar->packed_size, header_size) ||
         skip < 7) {
       archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
@@ -1534,12 +1697,38 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     return ret;
   }
 
-  filename_size = archive_le16dec(file_header.name_size);
-  if (p + filename_size > endp) {
-    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-      "Invalid filename size");
-    return (ARCHIVE_FATAL);
+  if (rar->info_name_allocated < (size_t)filename_size + 1) {
+    newptr = realloc(rar->info_name, (size_t)filename_size + 1);
+    if (newptr == NULL) {
+      archive_set_error(&a->archive, ENOMEM,
+                        "Couldn't allocate memory");
+      return (ARCHIVE_FATAL);
+    }
+    rar->info_name = newptr;
+    rar->info_name_allocated = (size_t)filename_size + 1;
   }
+  memcpy(rar->info_name, p, filename_size);
+  rar->info_name[filename_size] = '\0';
+  memset(&rar->info, 0, sizeof(rar->info));
+  rar->info.format = ARCHIVE_RAR_INFO_FORMAT_RAR4;
+  rar->info.packed_size = (uint64_t)rar->packed_size;
+  rar->info.unpacked_size = (uint64_t)rar->unp_size;
+  rar->info.crc32 = (uint32_t)rar->file_crc;
+  rar->info.crc32_present = 1;
+  rar->info.method = (unsigned char)file_header.method;
+  rar->info.unp_ver = (unsigned char)file_header.unp_ver;
+  rar->info.host_os = (unsigned char)file_header.host_os;
+  rar->info.flags = rar->file_flags;
+  rar->info.attributes = archive_le32dec(file_header.file_attr);
+  rar->info.is_dir =
+      (rar->file_flags & DICTIONARY_MASK) == FILE_IS_DIRECTORY;
+  rar->info.is_encrypted = (rar->file_flags & FHD_PASSWORD) != 0;
+  rar->info.is_solid = (rar->file_flags & FHD_SOLID) != 0;
+  rar->info.split_before = (rar->file_flags & FHD_SPLIT_BEFORE) != 0;
+  rar->info.split_after = (rar->file_flags & FHD_SPLIT_AFTER) != 0;
+  rar->info.name = rar->info_name;
+  rar->info.name_size = filename_size;
+
   if (rar->filename_allocated < filename_size * 2 + 2) {
     newsize = filename_size * 2 + 2;
     newptr = realloc(rar->filename, newsize);
@@ -1851,6 +2040,8 @@ read_header(struct archive_read *a, struct archive_entry *entry,
 
   if (((rar->mode) & AE_IFMT) == AE_IFLNK)
   {
+    rar->info.redir_type = ARCHIVE_RAR_REDIR_UNIX_SYMLINK;
+
     /* Make sure a symbolic-link file does not have its body. */
     rar->bytes_remaining = 0;
     archive_entry_set_size(entry, 0);
