@@ -61,6 +61,9 @@
 #define NEWSUB_HEAD  0x7a
 #define ENDARC_HEAD  0x7b
 
+/* End of Archive Header Flags */
+#define EARC_NEXT_VOLUME 0x0001
+
 /* Main Header Flags */
 #define MHD_VOLUME       0x0001
 #define MHD_COMMENT      0x0002
@@ -393,6 +396,11 @@ struct rar
    * Custom field to denote that this archive contains encrypted entries
    */
   int has_encrypted_entries;
+
+  /* Solid archives: the decoder state can carry over to the next entry,
+   * whose data then starts at solid_base in the window. */
+  char solid_state_valid;
+  int64_t solid_base;
 
   /* Raw header fields for archive_read_rar_entry_info(). */
   struct archive_rar_entry_info info;
@@ -1096,7 +1104,12 @@ archive_read_format_rar_read_header(struct archive_read *a,
         return (ARCHIVE_FATAL);
 #endif
       }
-      if (head_type == ENDARC_HEAD)
+      /* The end of a volume whose set goes on: when the next volume
+       * follows in the stream, its entries come next, as unRAR lists
+       * them. */
+      if (head_type == ENDARC_HEAD &&
+          !((rar->main_flags & MHD_VOLUME) && (flags & EARC_NEXT_VOLUME) &&
+            __archive_read_ahead(a, 7, NULL) != NULL))
         return (ARCHIVE_EOF);
       break;
 
@@ -1149,7 +1162,9 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
   case COMPRESS_METHOD_GOOD:
   case COMPRESS_METHOD_BEST:
     ret = read_data_compressed(a, buff, size, offset, 0);
-    if (ret != ARCHIVE_OK && ret != ARCHIVE_WARN) {
+    if (ret < ARCHIVE_WARN) {
+      /* Only on errors: at the end of an entry the PPMd model carries
+       * over to the next entry of a solid archive. */
       __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
       rar->start_new_table = 1;
       rar->ppmd_valid = 0;
@@ -1178,25 +1193,40 @@ archive_read_format_rar_read_data_skip(struct archive_read *a)
       rar->bytes_unconsumed = 0;
   }
 
+  /*
+   * In a solid archive the next entry's data continues this entry's
+   * stream, so the data is decoded, not stepped over. Data that cannot be
+   * decoded (encrypted, or damaged) is stepped over and the stream goes on
+   * from wherever it stopped.
+   */
+  if ((rar->main_flags & MHD_SOLID) && !rar->entry_eof &&
+      rar->compression_method != COMPRESS_METHOD_STORE &&
+      !(rar->file_flags & (FHD_PASSWORD | FHD_SPLIT_BEFORE)))
+  {
+    const void *buff;
+    size_t size;
+    int64_t offset;
+
+    do {
+      ret = archive_read_format_rar_read_data(a, &buff, &size, &offset);
+    } while (ret == ARCHIVE_OK || ret == ARCHIVE_WARN);
+    if (ret == ARCHIVE_FATAL)
+      return (ret);
+    if (rar->bytes_unconsumed > 0) {
+      __archive_read_consume(a, rar->bytes_unconsumed);
+      rar->bytes_unconsumed = 0;
+    }
+  }
+
   if (rar->bytes_remaining > 0) {
     bytes_skipped = __archive_read_consume(a, rar->bytes_remaining);
     if (bytes_skipped < 0)
       return (ARCHIVE_FATAL);
+    rar->bytes_remaining = 0;
   }
 
-  /* Compressed data to skip must be read from each header in a multivolume
-   * archive.
-   */
-  if (rar->main_flags & MHD_VOLUME && rar->file_flags & FHD_SPLIT_AFTER)
-  {
-    ret = archive_read_format_rar_read_header(a, a->entry);
-    if (ret == (ARCHIVE_EOF))
-      ret = archive_read_format_rar_read_header(a, a->entry);
-    if (ret != (ARCHIVE_OK))
-      return ret;
-    return archive_read_format_rar_read_data_skip(a);
-  }
-
+  /* A piece of a file split across volumes is skipped on its own; the
+   * next piece is the next entry, as unRAR lists it. */
   return (ARCHIVE_OK);
 }
 
@@ -1543,7 +1573,8 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   crc32_computed = __archive_crc32(0, (const unsigned char *)p + 2, 7 - 2);
   __archive_read_consume(a, 7);
 
-  if (!(rar->file_flags & FHD_SOLID))
+  /* A solid entry keeps the previous entry's times and mode until its own
+   * header sets them; the decoder state is kept further down. */
   {
     rar->compression_method = 0;
     rar->packed_size = 0;
@@ -1562,12 +1593,6 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     rar->mnsec = 0;
     rar->arctime = 0;
     rar->arcnsec = 0;
-  }
-  else
-  {
-    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                      "RAR solid archive support unavailable");
-    return (ARCHIVE_FATAL);
   }
 
   if ((h = __archive_read_ahead(a, (size_t)header_size - 7, NULL)) == NULL)
@@ -1875,8 +1900,10 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     p += filename_size;
   }
 
-  /* Split file in multivolume RAR. No more need to process header. */
-  if (rar->filename_save &&
+  /* Split file in multivolume RAR. No more need to process header.
+   * Only while reading an entry's data: a split piece reached through
+   * archive_read_next_header() is an entry of its own, as unRAR lists it. */
+  if (rar->filename_must_match && rar->filename_save &&
     filename_size == rar->filename_save_size &&
     !memcmp(rar->filename, rar->filename_save, filename_size + 1))
   {
@@ -1998,9 +2025,30 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   }
 
   rar->bytes_uncopied = rar->bytes_unconsumed = 0;
-  rar->lzss.position = rar->offset = 0;
+  if (!(rar->file_flags & FHD_SOLID) || !rar->solid_state_valid ||
+      rar->compression_method == COMPRESS_METHOD_STORE)
+  {
+    if (rar->compression_method != COMPRESS_METHOD_STORE)
+      rar->solid_state_valid = 0;
+    rar->lzss.position = 0;
+    rar->dictionary_size = 0;
+    rar->is_ppmd_block = 0;
+    rar->start_new_table = 1;
+    memset(rar->lengthtable, 0, sizeof(rar->lengthtable));
+    __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
+    rar->ppmd_valid = 0;
+    rar->filters.filterstart = INT64_MAX;
+  }
+  /*
+   * Otherwise this entry continues the solid stream: the window, the
+   * tables, the PPMd model and the filters carry over, and its data starts
+   * where the previous entry's ended.
+   */
+  if (rar->compression_method != COMPRESS_METHOD_STORE)
+    rar->solid_state_valid = 1;
+  rar->solid_base = rar->lzss.position;
+  rar->offset = rar->lzss.position;
   rar->offset_seek = 0;
-  rar->dictionary_size = 0;
   rar->offset_outgoing = 0;
   rar->br.cache_avail = 0;
   rar->br.avail_in = 0;
@@ -2008,16 +2056,11 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   rar->crc_calculated = 0;
   rar->entry_eof = 0;
   rar->valid = 1;
-  rar->is_ppmd_block = 0;
-  rar->start_new_table = 1;
   free(rar->unp_buffer);
   rar->unp_buffer = NULL;
   rar->unp_offset = 0;
   rar->unp_buffer_size = UNP_BUFFER_SIZE;
-  memset(rar->lengthtable, 0, sizeof(rar->lengthtable));
-  __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
-  rar->ppmd_valid = rar->ppmd_eod = 0;
-  rar->filters.filterstart = INT64_MAX;
+  rar->ppmd_eod = 0;
 
   archive_entry_set_mtime(entry, rar->mtime, rar->mnsec);
   archive_entry_set_ctime(entry, rar->ctime, rar->cnsec);
@@ -2282,7 +2325,8 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
     }
 
     if ((rar->ppmd_eod && rar->bytes_uncopied == 0) ||
-       (rar->dictionary_size && rar->offset >= rar->unp_size))
+       (rar->dictionary_size &&
+        rar->offset - rar->solid_base >= rar->unp_size))
     {
       if (rar->unp_offset > 0) {
         /*
@@ -2660,7 +2704,8 @@ parse_codes(struct archive_read *a)
     void *new_window;
     unsigned int new_size;
 
-    if (rar->unp_size >= DICTIONARY_MAX_SIZE)
+    if (rar->unp_size >= DICTIONARY_MAX_SIZE ||
+        (rar->main_flags & MHD_SOLID) || (rar->file_flags & FHD_SOLID))
       new_size = DICTIONARY_MAX_SIZE;
     else
       new_size = rar_fls((unsigned int)rar->unp_size) << 1;

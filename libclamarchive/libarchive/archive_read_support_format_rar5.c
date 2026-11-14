@@ -1978,7 +1978,8 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	 * which case we may never have had the chance */
 
 	if(rar5->file.solid > 0 && rar5->cstate.data_encrypted == 0 &&
-	    rar5->cstate.window_buf == NULL) {
+	    rar5->cstate.window_buf == NULL &&
+	    !(rar5->generic.split_before && !rar5->cstate.switch_multivolume)) {
 		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
 				  "Declared solid file, but no window buffer "
 				  "initialized yet");
@@ -2204,6 +2205,13 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	rar5->info.name_size = name_size;
 
 	if(rar5->generic.split_before > 0) {
+		/* A continuation piece reached by reading the next header (the
+		 * archive was opened at a later volume, or the previous piece
+		 * was skipped) is an entry of its own, as unRAR lists it; its
+		 * data cannot be unpacked without the earlier pieces. */
+		if(!rar5->cstate.switch_multivolume)
+			return ARCHIVE_OK;
+
 		/* If now we're standing on a header that has a 'split before'
 		 * mark, it means we're standing on a 'continuation' file
 		 * header. Signal the caller that if it wants to move to
@@ -4604,7 +4612,8 @@ static int rar5_read_data(struct archive_read *a, const void **buff,
 static int rar5_read_data_skip(struct archive_read *a) {
 	struct rar5 *rar5 = a->format->data;
 
-	if(rar5->main.solid && (rar5->cstate.data_encrypted == 0)) {
+	if(rar5->main.solid && (rar5->cstate.data_encrypted == 0) &&
+	    !rar5->info.split_before) {
 		/* In solid archives, instead of skipping the data, we need to
 		 * extract it, and dispose the result. The side effect of this
 		 * operation will be setting up the initial window buffer state
