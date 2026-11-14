@@ -117,6 +117,8 @@ struct file_header {
 	uint8_t eof : 1;             /* Did we finish unpacking the file? */
 	uint8_t dir : 1;             /* Is this file entry a directory? */
 	uint8_t encrypted : 1;       /* Is the data encrypted? */
+	uint8_t unknown_size : 1;    /* Unpacked size unknown: data ends
+					with its last block. */
 	uint64_t version;            /* File version extra record, or 0. */
 
 	/* Optional time fields. */
@@ -1896,10 +1898,9 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	if(r != ARCHIVE_OK)
 		return r;
 
-	if(file_flags & UNKNOWN_UNPACKED_SIZE) {
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_PROGRAMMER,
-		    "Files with unknown unpacked size are not supported");
-		return ARCHIVE_FATAL;
+	if((file_flags & UNKNOWN_UNPACKED_SIZE) && !(file_flags & DIRECTORY)) {
+		/* The data goes on until its last block, as unRAR reads it. */
+		unpacked_size = (uint64_t)(SSIZE_MAX / 2);
 	}
 
 	rar5->file.dir = (uint8_t) ((file_flags & DIRECTORY) > 0);
@@ -2120,11 +2121,11 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 			return ret;
 	}
 
-	if((file_flags & UNKNOWN_UNPACKED_SIZE) == 0) {
-		rar5->file.unpacked_size = (ssize_t) unpacked_size;
-		if(rar5->file.redir_type == REDIR_TYPE_NONE)
-			archive_entry_set_size(entry, unpacked_size);
-	}
+	rar5->file.unpacked_size = (ssize_t) unpacked_size;
+	rar5->file.unknown_size = (file_flags & UNKNOWN_UNPACKED_SIZE) != 0;
+	if((file_flags & UNKNOWN_UNPACKED_SIZE) == 0 &&
+	    rar5->file.redir_type == REDIR_TYPE_NONE)
+		archive_entry_set_size(entry, unpacked_size);
 
 	if(file_flags & UTIME) {
 		archive_entry_set_mtime(entry, (time_t) mtime, 0);
@@ -2140,6 +2141,7 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 		rar5->cstate.block_parsing_finished = 1;
 		rar5->cstate.all_filters_applied = 1;
 		rar5->cstate.initialized = 0;
+		memset(&rar5->last_block_hdr, 0, sizeof(rar5->last_block_hdr));
 	}
 
 	memset(&rar5->info, 0, sizeof(rar5->info));
@@ -4159,6 +4161,15 @@ static int do_uncompress_file(struct archive_read* a) {
 		 * contains only filter definitions (this is common in big
 		 * files). */
 		while(1) {
+			/* Without a declared size, the last block ends the
+			 * data. */
+			if(rar5->file.unknown_size &&
+			    rar5->cstate.block_parsing_finished &&
+			    rar5->last_block_hdr.block_flags_u8 != 0 &&
+			    bf_is_last_block(&rar5->last_block_hdr) &&
+			    rar5->file.bytes_remaining == 0)
+				return ARCHIVE_EOF;
+
 			ret = process_block(a);
 			if(ret != ARCHIVE_OK)
 				return ret;
