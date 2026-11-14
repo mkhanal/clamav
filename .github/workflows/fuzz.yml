@@ -1,4 +1,4 @@
-name: Fuzz
+name: ClamCove Fuzz
 
 on:
   pull_request:

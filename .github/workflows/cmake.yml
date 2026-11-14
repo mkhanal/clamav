@@ -1,4 +1,4 @@
-name: CMake Build
+name: ClamCove CMake Build
 
 on:
   push:

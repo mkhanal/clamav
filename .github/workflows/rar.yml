@@ -1,4 +1,4 @@
-name: RAR backend
+name: ClamCove RAR backend
 
 on:
   push:
@@ -149,3 +149,17 @@ jobs:
           name: rar-parity
           path: parity*.json
           if-no-files-found: ignore
+
+  image:
+    name: container image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the release image from the checkout
+        run: docker build -f .github/release/Dockerfile -t clamcove:ci .
+
+      - name: Smoke test
+        run: |
+          docker run --rm clamcove:ci clamscan --version
+          docker run --rm clamcove:ci sh -c 'ldd /usr/lib/libclamunrar_iface.so* | grep -c -i -e rarlab -e unrar_dll || true; ls /usr/lib/libclamunrar.so* 2>/dev/null && exit 1 || true'
