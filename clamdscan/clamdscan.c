@@ -55,7 +55,7 @@ static void print_server_version(const struct optstruct *opt)
 {
     if (get_clamd_version(opt)) {
         /* can't get version from server, fallback */
-        printf("ClamAV %s\n", get_version());
+        printf("ClamAV %s%s\n", get_version(), get_distribution_suffix());
     }
 }
 

@@ -1,3 +1,30 @@
+# ClamCove
+
+ClamCove is a distribution of [ClamAV](https://www.clamav.net/) 1.5.4 whose
+builds contain no RARLAB unRAR code. It is a drop-in replacement for ClamAV:
+commands, configuration files, library names and sonames, install paths, the
+signature database format and mirrors, the clamd protocol, exit codes and
+output formats are ClamAV's. Only the version output differs, and the
+ClamAV version comes first and unchanged:
+
+```
+ClamAV 1.5.4 (ClamCove 1.5.4-1)
+```
+
+ClamCove is based on ClamAV by Cisco Systems, Inc. ClamAV is a trademark of
+Cisco. ClamCove is not affiliated with or endorsed by Cisco or the ClamAV
+project. ClamCove is licensed under the GNU General Public License, version 2
+(see [COPYING](COPYING)).
+
+What differs from upstream ClamAV 1.5.4:
+
+- RAR archives are read through libarchive instead of RARLAB unRAR code.
+- PCRE subsignatures are skipped when the container cannot match.
+- An alert is raised for an incomplete RAR archive.
+
+See [NOTICE](NOTICE) for the full statement. The rest of this file is
+ClamAV's own README.
+
 # ClamAV
 
 <p align="center">
