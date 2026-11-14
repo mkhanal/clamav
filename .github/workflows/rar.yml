@@ -72,7 +72,7 @@ jobs:
             prefix/bin/clamscan -d sigs -r --alert-encrypted-archive=yes --alert-exceeds-max=yes $opt \
               --include='\.(rar|r[0-9][0-9]|exe|sfx)$|part[0-9]+\.rar$' $dirs > scan.log 2>&1 || rc=$?
             tail -5 scan.log
-            if [ "$rc" -ge 2 ] && [ "$rc" -ne 2 ]; then echo "clamscan exit $rc"; exit 1; fi
+            if [ "$rc" -gt 2 ]; then echo "clamscan exit $rc"; exit 1; fi
             if grep -E "AddressSanitizer|runtime error:|UndefinedBehaviorSanitizer" scan.log; then exit 1; fi
             rc=0
           done
