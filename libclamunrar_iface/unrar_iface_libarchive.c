@@ -127,6 +127,7 @@ typedef struct unrar_handle_tag {
     cl_unrar_error_t status; /* For HEADER_DONE and for a failed header read. */
     char **volumes;
     size_t volume_count;
+    uint32_t rar5_hash32; /* unRAR's RAR5 hash field keeps its last value. */
 } unrar_handle_t;
 
 /*
@@ -415,7 +416,46 @@ static cl_unrar_error_t collect_volumes(unrar_handle_t *h, const char *filename)
  * Text conversion, as unRAR converts names and comments for its char API.
  */
 
-/* wcsrtombs into dest; on an unconvertible character keep what precedes it. */
+/*
+ * Bytes that are not valid text in the locale travel through unRAR's wide
+ * strings as U+E080..U+E0FF, marked by a U+FFFE somewhere in the string.
+ */
+#define MAP_AREA_START 0xE000
+#define MAPPED_STRING_MARK 0xFFFE
+
+/* The mapped form back to bytes; other characters to the locale, '_' if not. */
+static void wide_to_char_mapped(const wchar_t *src, char *dest, size_t dest_size)
+{
+    size_t in  = 0;
+    size_t out = 0;
+
+    memset(dest, 0, dest_size);
+    while (src[in] != 0 && out + MB_CUR_MAX < dest_size) {
+        unsigned c = (unsigned)src[in];
+        if (c == MAPPED_STRING_MARK) {
+            in++;
+            continue;
+        }
+        if (c >= MAP_AREA_START + 0x80 && c < MAP_AREA_START + 0x100) {
+            dest[out++] = (char)(c - MAP_AREA_START);
+            in++;
+        } else {
+            mbstate_t ps;
+            int len;
+            memset(&ps, 0, sizeof(ps));
+            if (wcrtomb(dest + out, src[in], &ps) == (size_t)-1) {
+                dest[out] = '_';
+            }
+            in++;
+            memset(&ps, 0, sizeof(ps));
+            len = (int)mbrlen(dest + out, MB_CUR_MAX, &ps);
+            out += len > 1 ? (size_t)len : 1;
+        }
+    }
+    dest[out < dest_size ? out : dest_size - 1] = '\0';
+}
+
+/* As unRAR's WideToChar(): on an unconvertible character keep what precedes it. */
 static void wide_to_char(const wchar_t *src, char *dest, size_t dest_size)
 {
     mbstate_t ps;
@@ -423,6 +463,10 @@ static void wide_to_char(const wchar_t *src, char *dest, size_t dest_size)
     size_t n;
 
     if (dest_size == 0) {
+        return;
+    }
+    if (wcschr(src, (wchar_t)MAPPED_STRING_MARK) != NULL) {
+        wide_to_char_mapped(src, dest, dest_size);
         return;
     }
     memset(dest, 0, dest_size);
@@ -437,46 +481,66 @@ static void wide_to_char(const wchar_t *src, char *dest, size_t dest_size)
     dest[dest_size - 1] = '\0';
 }
 
-/* Bytes that are not valid in the current locale are passed through as is. */
-static int char_is_convertible(const char *src)
+/* As unRAR's CharToWide(): bytes the locale cannot read are mapped. */
+static wchar_t *char_to_wide(const char *src)
 {
+    size_t size = strlen(src) + 2;
+    wchar_t *w  = calloc(size, sizeof(wchar_t));
     mbstate_t ps;
     const char *s = src;
     size_t n;
+    size_t in = 0, out = 0;
+    int marked = 0;
 
+    if (w == NULL) {
+        return NULL;
+    }
     memset(&ps, 0, sizeof(ps));
-    n = mbsrtowcs(NULL, &s, 0, &ps);
-    return n != (size_t)-1 && !(n == 0 && *src != '\0');
+    n = mbsrtowcs(w, &s, size, &ps);
+    if (n != (size_t)-1 && !(n == 0 && *src != '\0')) {
+        return w;
+    }
+    memset(w, 0, size * sizeof(wchar_t));
+    while (out < size - 1 && src[in] != '\0') {
+        size_t res;
+        memset(&ps, 0, sizeof(ps));
+        res = mbrtowc(&w[out], src + in, MB_CUR_MAX, &ps);
+        if (res == (size_t)-1 || res == (size_t)-2) {
+            if ((unsigned char)src[in] < 0x80) {
+                break;
+            }
+            if (!marked) {
+                w[out++] = (wchar_t)MAPPED_STRING_MARK;
+                marked   = 1;
+                if (out >= size - 1) {
+                    break;
+                }
+            }
+            w[out++] = (wchar_t)((unsigned char)src[in++] + MAP_AREA_START);
+        } else {
+            int len;
+            memset(&ps, 0, sizeof(ps));
+            len = (int)mbrlen(src + in, MB_CUR_MAX, &ps);
+            in += len > 1 ? (size_t)len : 1;
+            out++;
+        }
+    }
+    w[out] = 0;
+    return w;
 }
 
 /* Converts locale text the way unRAR's CharToWide followed by WideToChar does. */
 static void char_to_char(const char *src, char *dest, size_t dest_size)
 {
-    size_t len;
-    wchar_t *w;
-    mbstate_t ps;
-    const char *s = src;
+    wchar_t *w = char_to_wide(src);
 
     if (dest_size == 0) {
         return;
     }
-    if (!char_is_convertible(src)) {
-        len = strlen(src);
-        if (len > dest_size - 1) {
-            len = dest_size - 1;
-        }
-        memcpy(dest, src, len);
-        dest[len] = '\0';
-        return;
-    }
-    len = strlen(src) + 1;
-    w   = calloc(len, sizeof(wchar_t));
     if (w == NULL) {
         dest[0] = '\0';
         return;
     }
-    memset(&ps, 0, sizeof(ps));
-    (void)mbsrtowcs(w, &s, len, &ps);
     wide_to_char(w, dest, dest_size);
     free(w);
 }
@@ -802,8 +866,10 @@ static void read_comment(struct archive *a, char **comment, uint32_t *comment_si
         unrar_dbgmsg("unrar_open: Archive comment cannot be read.\n");
         return;
     }
-    if (cmt.in_main_header && (cmt.unp_ver < 15)) {
-        unrar_dbgmsg("unrar_open: Archive comment cannot be read.\n");
+    if (cmt.in_main_header) {
+        /* unRAR's RAROpenArchiveEx() hands over no RAR 1.5-2.x main header
+         * comment, stored or packed. */
+        unrar_dbgmsg("unrar_open: Comments are not present in this archive.\n");
         return;
     }
 
@@ -997,11 +1063,20 @@ cl_unrar_error_t unrar_peek_file_header(void *hArchive, unrar_metadata_t *file_m
 
     file_metadata->unpack_size = info.unpacked_size_unknown ? (uint64_t)0x7fffffff7fffffffULL : info.unpacked_size;
     file_metadata->pack_size   = info.packed_size;
-    if (info.crc32_present) {
+    if (info.format == ARCHIVE_RAR_INFO_FORMAT_RAR4) {
         file_metadata->crc = info.crc32;
-    } else if (info.blake2sp_present) {
-        file_metadata->crc = (uint32_t)info.blake2sp[0] | ((uint32_t)info.blake2sp[1] << 8) |
+    } else {
+        /*
+         * unRAR reports a RAR5 entry's CRC32 from a field it shares with the
+         * BLAKE2sp hash and leaves as it was when the header has neither.
+         */
+        if (info.blake2sp_present) {
+            h->rar5_hash32 = (uint32_t)info.blake2sp[0] | ((uint32_t)info.blake2sp[1] << 8) |
                              ((uint32_t)info.blake2sp[2] << 16) | ((uint32_t)info.blake2sp[3] << 24);
+        } else if (info.crc32_present) {
+            h->rar5_hash32 = info.crc32;
+        }
+        file_metadata->crc = h->rar5_hash32;
     }
     file_metadata->encrypted = info.is_encrypted ? 1 : 0;
     file_metadata->is_dir    = info.is_dir ? 1 : 0;
@@ -1048,6 +1123,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     const void *buf;
     size_t size;
     la_int64_t offset;
+    uint64_t remaining;
     int r;
 
     if (NULL == h || NULL == destPath) {
@@ -1075,6 +1151,9 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
         return UNRAR_ERR;
     }
 
+    /* unRAR writes at most the unpacked size the header declares. */
+    remaining = info.unpacked_size_unknown ? UINT64_MAX : info.unpacked_size;
+
     for (;;) {
         r = archive_read_data_block(h->archive, &buf, &size, &offset);
         if (r == ARCHIVE_EOF) {
@@ -1087,6 +1166,10 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
             }
             break;
         }
+        if ((uint64_t)size > remaining) {
+            size = (size_t)remaining;
+        }
+        remaining -= size;
         if (size > 0 && outputBuffer == NULL) {
             const char *p = buf;
             while (size > 0) {
