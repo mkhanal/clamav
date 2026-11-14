@@ -51,7 +51,8 @@ typedef enum cl_unrar_error_tag {
     UNRAR_ENCRYPTED,
     UNRAR_EMEM,
     UNRAR_ERR,
-    UNRAR_EOPEN
+    UNRAR_EOPEN,
+    UNRAR_EDATA
 } cl_unrar_error_t;
 
 typedef struct unrar_metadata_tag {
@@ -62,6 +63,7 @@ typedef struct unrar_metadata_tag {
     unsigned int encrypted;
     uint8_t method;
     uint32_t is_dir;
+    uint32_t is_link;
 } unrar_metadata_t;
 
 cl_unrar_error_t unrar_open(const char *filename, void **hArchive, char **comment, uint32_t *comment_size, uint8_t debug_flag);
