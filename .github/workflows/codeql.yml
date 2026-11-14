@@ -40,7 +40,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends bison flex check libbz2-dev libcurl4-openssl-dev \
-            libjson-c-dev libncurses-dev libpcre2-dev libssl-dev libxml2-dev pkg-config zlib1g-dev
+            libjson-c-dev libmilter-dev libncurses-dev libpcre2-dev libssl-dev libxml2-dev pkg-config zlib1g-dev
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
