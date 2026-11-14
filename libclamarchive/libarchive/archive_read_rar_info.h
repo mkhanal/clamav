@@ -36,6 +36,7 @@
 #include <stdint.h>
 
 struct archive;
+struct archive_read;
 
 #define ARCHIVE_RAR_INFO_FORMAT_RAR4 4
 #define ARCHIVE_RAR_INFO_FORMAT_RAR5 5
@@ -104,6 +105,35 @@ int archive_read_rar_entry_info(struct archive *,
  */
 int archive_read_rar_comment_info(struct archive *,
     struct archive_rar_comment_info *);
+
+/*
+ * Skipping an entry of a solid archive means decoding it, because the
+ * entries after it continue its stream. archive_read_rar_skip_data() skips
+ * the current entry's data like archive_read_data_skip(), but gives up with
+ * ARCHIVE_FATAL and the errno ARCHIVE_RAR_ERRNO_SKIP_LIMIT once the data
+ * decoded for it exceeds *budget bytes (when budget is not NULL; the bytes
+ * decoded are taken off it) or stop(stop_ctx) returns non-zero (when stop is
+ * not NULL; it is called before every block). Skipping that decodes nothing
+ * is not limited.
+ */
+struct archive_rar_skip_limit {
+	uint64_t	*budget;
+	int		(*stop)(void *);
+	void		*stop_ctx;
+};
+
+#define ARCHIVE_RAR_ERRNO_SKIP_LIMIT	0x5201
+
+int archive_read_rar_skip_data(struct archive *,
+    const struct archive_rar_skip_limit *);
+
+/* Shared by both readers: true when `consumed` more bytes break the limit. */
+int __archive_rar_skip_limit_hit(struct archive_read *,
+    const struct archive_rar_skip_limit *, uint64_t consumed);
+
+/* The RAR5 reader's half of archive_read_rar_skip_data(). */
+int __archive_read_rar5_skip_data(struct archive *,
+    const struct archive_rar_skip_limit *);
 
 /* CRC32 as RAR uses it for data and header checksums. */
 uint32_t archive_rar_crc32(const void *, size_t);

@@ -367,6 +367,9 @@ struct rar
   /* Filters */
   struct rar_filters filters;
 
+  /* Set while archive_read_rar_skip_data() is skipping. */
+  const struct archive_rar_skip_limit *skip_limit;
+
   /* PPMd Variant H members */
   char ppmd_valid;
   char ppmd_eod;
@@ -1184,7 +1187,12 @@ archive_read_format_rar_read_data_skip(struct archive_read *a)
     int64_t offset;
 
     do {
+      if (__archive_rar_skip_limit_hit(a, rar->skip_limit, 0))
+        return (ARCHIVE_FATAL);
       ret = archive_read_format_rar_read_data(a, &buff, &size, &offset);
+      if ((ret == ARCHIVE_OK || ret == ARCHIVE_WARN) &&
+          __archive_rar_skip_limit_hit(a, rar->skip_limit, size))
+        return (ARCHIVE_FATAL);
     } while (ret == ARCHIVE_OK || ret == ARCHIVE_WARN);
     if (ret == ARCHIVE_FATAL)
       return (ret);
@@ -1471,6 +1479,47 @@ archive_read_rar_entry_info(struct archive *_a,
     return (ARCHIVE_OK);
   }
   return (__archive_read_rar5_entry_info(_a, info));
+}
+
+int
+__archive_rar_skip_limit_hit(struct archive_read *a,
+    const struct archive_rar_skip_limit *limit, uint64_t consumed)
+{
+  if (limit == NULL)
+    return (0);
+  if (limit->budget != NULL) {
+    if (consumed > *limit->budget) {
+      *limit->budget = 0;
+      archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_SKIP_LIMIT,
+                        "Skipping a solid RAR entry exceeded the size limit");
+      return (1);
+    }
+    *limit->budget -= consumed;
+  }
+  if (limit->stop != NULL && limit->stop(limit->stop_ctx)) {
+    archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_SKIP_LIMIT,
+                      "Skipping a solid RAR entry exceeded the time limit");
+    return (1);
+  }
+  return (0);
+}
+
+int
+archive_read_rar_skip_data(struct archive *_a,
+    const struct archive_rar_skip_limit *limit)
+{
+  struct archive_read *a;
+  int ret;
+
+  if ((a = rar_info_reader(_a, "rar")) != NULL) {
+    struct rar *rar = a->format->data;
+
+    rar->skip_limit = limit;
+    ret = archive_read_data_skip(_a);
+    rar->skip_limit = NULL;
+    return (ret);
+  }
+  return (__archive_read_rar5_skip_data(_a, limit));
 }
 
 int
