@@ -20,8 +20,33 @@ MARKER = b'ClamAV-RAR-backend-test-marker-6f1c2e'
 
 # Archive -> what every entry must extract to: (size, SHA-256).
 EXTRACTED = {
-    # RAR 1.5 and RAR 2.0 / 2.6 compression, including multimedia (audio)
-    # blocks and solid streams.
+    # RAR 2.9 (RAR 3.x / 4.x format) standard filters, and a filter over
+    # PPMd-coded data.
+    'rar4-filter-e8.rar': [
+        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+    'rar4-filter-e8e9.rar': [
+        (8000, '815934886151360cff53369052cab8be55fcdca7168f88cdfcd29481628305d6')],
+    'rar4-filter-delta.rar': [
+        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
+    'rar4-filter-rgb.rar': [
+        (18486, '1981c9d2d85226d003f413b0fbf13733b33a2aa151b03c6c281aa6d8aa9ac9e8')],
+    'rar4-filter-audio.rar': [
+        (48044, '6ce068910efc77af2d618bf035c6348b13d9fcf828bf3e69b5d068b55a530ab3')],
+    'rar4-filter-itanium.rar': [
+        (11200, '6b7a6404e2e03a3e5fc8d512f3ac85c9a5f18f0b590011077840c829d44798c4')],
+    'rar4-ppmd-e8.rar': [
+        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+    # RAR5 filters.
+    'rar5-filter-delta.rar': [
+        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
+    'rar5-filter-e8.rar': [
+        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+}
+
+# RAR 1.5, 2.0 and 2.6 compression, including multimedia (audio) blocks and
+# solid streams, as RARLAB unRAR extracts it. The libarchive backend has no
+# decoder for it.
+EXTRACTED_BY_UNRAR_ONLY = {
     'rar15-small.rar': [
         (302, '6905378fc71be9665755071e77d712963f14a9e3ccab8a62fb30d42023ba8947')],
     'rar15-solid.rar': [
@@ -45,27 +70,6 @@ EXTRACTED = {
         (3500, '445ec62ce9e27c9f752dddc1d906350720012014261072dee5dc7cec435a0cd9')],
     'rar26-lz-audio.rar': [
         (9998, 'f0bc83e91397965891393014c78cf130fa4a6265e9aa2e3d5fe5644e57018c9c')],
-    # RAR 2.9 (RAR 3.x / 4.x format) standard filters, and a filter over
-    # PPMd-coded data.
-    'rar4-filter-e8.rar': [
-        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
-    'rar4-filter-e8e9.rar': [
-        (8000, '815934886151360cff53369052cab8be55fcdca7168f88cdfcd29481628305d6')],
-    'rar4-filter-delta.rar': [
-        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
-    'rar4-filter-rgb.rar': [
-        (18486, '1981c9d2d85226d003f413b0fbf13733b33a2aa151b03c6c281aa6d8aa9ac9e8')],
-    'rar4-filter-audio.rar': [
-        (48044, '6ce068910efc77af2d618bf035c6348b13d9fcf828bf3e69b5d068b55a530ab3')],
-    'rar4-filter-itanium.rar': [
-        (11200, '6b7a6404e2e03a3e5fc8d512f3ac85c9a5f18f0b590011077840c829d44798c4')],
-    'rar4-ppmd-e8.rar': [
-        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
-    # RAR5 filters.
-    'rar5-filter-delta.rar': [
-        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
-    'rar5-filter-e8.rar': [
-        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
 }
 
 
@@ -113,7 +117,7 @@ class TC(testcase.TestCase):
         return self.execute_command(command)
 
     def test_every_compression_version_and_filter_extracts_exactly(self):
-        self.step_name('Test RAR 1.5, 2.0, 2.6, 2.9 filters and RAR5 filters extract byte for byte')
+        self.step_name('Test RAR 2.9 filters and RAR5 filters extract byte for byte')
 
         for archive, entries in EXTRACTED.items():
             with self.subTest(archive=archive):
@@ -127,6 +131,33 @@ class TC(testcase.TestCase):
                 assert output.ec == 1  # virus
                 self.verify_output(output.out, expected=[
                     'RAR_ENTRY_{}.UNOFFICIAL FOUND'.format(index) for index in range(len(entries))])
+
+    def test_compression_before_rar_2_9_is_extracted_by_unrar_only(self):
+        self.step_name('Test RAR 1.5, 2.0 and 2.6 entries: extracted by unRAR, an extraction error without it')
+
+        for archive, entries in EXTRACTED_BY_UNRAR_ONLY.items():
+            with self.subTest(archive=archive):
+                testfile = TC.path_rar / archive
+
+                if TC.backend == 'rarlab':
+                    path_db = TC.path_tmp / (archive + '.hsb')
+                    path_db.write_text(''.join(
+                        '{}:{}:RAR_ENTRY_{}\n'.format(sha256, size, index)
+                        for index, (size, sha256) in enumerate(entries)))
+
+                    output = self.scan(testfile, '--allmatch', path_db=path_db)
+
+                    assert output.ec == 1  # virus
+                    self.verify_output(output.out, expected=[
+                        'RAR_ENTRY_{}.UNOFFICIAL FOUND'.format(index) for index in range(len(entries))])
+                else:
+                    # Nothing is extracted and nothing is reported as extracted:
+                    # each entry fails with an error, never an empty success.
+                    output = self.scan(testfile, '--debug')
+
+                    assert output.ec == 0  # clean
+                    self.verify_output(output.out, expected=['{}: OK'.format(testfile)])
+                    assert (output.out + output.err).count('RAR: Error extracting file') >= len(entries)
 
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
