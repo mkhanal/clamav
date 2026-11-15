@@ -1119,6 +1119,17 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
   if (rar->entry_eof || rar->offset_seek >= rar->unp_size) {
     *size = 0;
     *offset = rar->offset;
+    /* Stored data ends here, before read_data_stored() could check it. */
+    if (!rar->entry_eof && rar->compression_method == COMPRESS_METHOD_STORE) {
+      rar->entry_eof = 1;
+      if (rar->file_crc != rar->crc_calculated) {
+#ifndef DONT_FAIL_ON_CRC_ERROR
+        archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_CHECKSUM,
+                          "File CRC error");
+        return (ARCHIVE_FAILED);
+#endif
+      }
+    }
     return (ARCHIVE_EOF);
   }
 
@@ -2329,7 +2340,7 @@ read_data_stored(struct archive_read *a, const void **buff, size_t *size,
     *offset = rar->offset;
     if (rar->file_crc != rar->crc_calculated) {
 #ifndef DONT_FAIL_ON_CRC_ERROR
-      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+      archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_CHECKSUM,
                         "File CRC error");
       return (ARCHIVE_FAILED);
 #endif
@@ -2458,7 +2469,7 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
       *offset = rar->offset;
       if (rar->file_crc != rar->crc_calculated) {
 #ifndef DONT_FAIL_ON_CRC_ERROR
-        archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+        archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_CHECKSUM,
                           "File CRC error");
         return (ARCHIVE_FAILED);
 #endif

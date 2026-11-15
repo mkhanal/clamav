@@ -159,6 +159,36 @@ class TC(testcase.TestCase):
                     self.verify_output(output.out, expected=['{}: OK'.format(testfile)])
                     assert (output.out + output.err).count('RAR: Error extracting file') >= len(entries)
 
+    def test_entry_is_checked_against_its_checksum(self):
+        self.step_name('Test an entry with one flipped data byte is not extracted as if it were intact')
+
+        # One entry each: stored and compressed, RAR4 CRC32, RAR5 CRC32 and
+        # RAR5 BLAKE2sp. The middle of each archive is entry data.
+        archives = ('rar4-stored-checked.rar', 'rar4-compressed-checked.rar',
+                    'rar5-stored-checked.rar', 'rar5-compressed-checked.rar',
+                    'rar5-blake2-checked.rar', 'rar5-stored-blake2-checked.rar')
+        for archive in archives:
+            with self.subTest(archive=archive):
+                intact = TC.path_rar / archive
+                output = self.scan(intact, '--debug')
+                assert output.ec == 0  # clean
+                assert 'RAR: Extraction complete' in output.out + output.err
+                assert 'RAR: Error extracting file' not in output.out + output.err
+
+                if TC.backend == 'rarlab':
+                    # unRAR hands over data whose checksum does not match, and it is scanned.
+                    continue
+
+                damaged = TC.path_tmp / ('damaged-' + archive)
+                data = bytearray(intact.read_bytes())
+                data[len(data) // 2] ^= 0x01
+                damaged.write_bytes(data)
+
+                output = self.scan(damaged, '--debug')
+                assert output.ec == 0  # clean
+                assert 'RAR: Error extracting file' in output.out + output.err
+                assert 'RAR: Extraction complete' not in output.out + output.err
+
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
 
