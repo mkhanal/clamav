@@ -530,6 +530,7 @@ extern cl_unrar_error_t (*cli_unrar_peek_file_header)(void *hArchive, unrar_meta
 extern cl_unrar_error_t (*cli_unrar_extract_file)(void *hArchive, const char *destPath, char *outputBuffer);
 extern cl_unrar_error_t (*cli_unrar_skip_file)(void *hArchive);
 extern cl_unrar_error_t (*cli_unrar_set_skip_limits)(void *hArchive, uint64_t max_bytes, uint64_t deadline_usec);
+extern cl_unrar_error_t (*cli_unrar_set_temp_dir)(void *hArchive, const char *dir);
 extern void (*cli_unrar_close)(void *hArchive);
 
 extern LIBCLAMAV_EXPORT int have_rar;

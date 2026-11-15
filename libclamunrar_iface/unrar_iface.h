@@ -44,6 +44,7 @@
 #define unrar_extract_file libclamunrar_iface_LTX_unrar_extract_file
 #define unrar_skip_file libclamunrar_iface_LTX_unrar_skip_file
 #define unrar_set_skip_limits libclamunrar_iface_LTX_unrar_set_skip_limits
+#define unrar_set_temp_dir libclamunrar_iface_LTX_unrar_set_temp_dir
 #define unrar_close libclamunrar_iface_LTX_unrar_close
 
 typedef enum cl_unrar_error_tag {
@@ -93,6 +94,22 @@ cl_unrar_error_t unrar_skip_file(void *hArchive);
  * @return UNRAR_OK or UNRAR_ERR.
  */
 cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint64_t deadline_usec);
+
+/**
+ * @brief Name the directory for the temporary file behind a large decompression window.
+ *
+ * A RAR decompression window larger than 64 MiB is kept in an unnamed
+ * temporary file in this directory instead of anonymous memory, so under
+ * memory pressure the kernel writes it to disk. The file has no name and mode
+ * 0600, and is released when the archive is closed or the process dies.
+ * Without a call, or with NULL, every window stays in memory. Call before
+ * extracting. Ignored by the RARLAB backend.
+ *
+ * @param hArchive The archive handle.
+ * @param dir      The directory, or NULL.
+ * @return UNRAR_OK or UNRAR_ERR.
+ */
+cl_unrar_error_t unrar_set_temp_dir(void *hArchive, const char *dir);
 void unrar_close(void *hArchive);
 
 #endif

@@ -90,6 +90,7 @@ cl_unrar_error_t (*cli_unrar_peek_file_header)(void *hArchive, unrar_metadata_t 
 cl_unrar_error_t (*cli_unrar_extract_file)(void *hArchive, const char *destPath, char *outputBuffer);
 cl_unrar_error_t (*cli_unrar_skip_file)(void *hArchive);
 cl_unrar_error_t (*cli_unrar_set_skip_limits)(void *hArchive, uint64_t max_bytes, uint64_t deadline_usec);
+cl_unrar_error_t (*cli_unrar_set_temp_dir)(void *hArchive, const char *dir);
 void (*cli_unrar_close)(void *hArchive);
 
 int have_rar             = 0;
@@ -322,6 +323,7 @@ static void rarload(void)
     cli_unrar_extract_file     = unrar_extract_file;
     cli_unrar_skip_file        = unrar_skip_file;
     cli_unrar_set_skip_limits  = unrar_set_skip_limits;
+    cli_unrar_set_temp_dir     = unrar_set_temp_dir;
     cli_unrar_close            = unrar_close;
 #else
     rhandle = load_module("libclamunrar_iface", "unrar");
@@ -333,6 +335,7 @@ static void rarload(void)
         (NULL == (cli_unrar_extract_file = (cl_unrar_error_t (*)(void *, const char *, char *))get_module_function(rhandle, "libclamunrar_iface_LTX_unrar_extract_file"))) ||
         (NULL == (cli_unrar_skip_file = (cl_unrar_error_t (*)(void *))get_module_function(rhandle, "libclamunrar_iface_LTX_unrar_skip_file"))) ||
         (NULL == (cli_unrar_set_skip_limits = (cl_unrar_error_t (*)(void *, uint64_t, uint64_t))get_module_function(rhandle, "libclamunrar_iface_LTX_unrar_set_skip_limits"))) ||
+        (NULL == (cli_unrar_set_temp_dir = (cl_unrar_error_t (*)(void *, const char *))get_module_function(rhandle, "libclamunrar_iface_LTX_unrar_set_temp_dir"))) ||
         (NULL == (cli_unrar_close = (void (*)(void *))get_module_function(rhandle, "libclamunrar_iface_LTX_unrar_close")))) {
 
         cli_warnmsg("Failed to load function from UnRAR module\n");

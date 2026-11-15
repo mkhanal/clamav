@@ -241,6 +241,18 @@ static void cli_rar_set_skip_limits(cli_ctx *ctx, void *hArchive)
 }
 
 /**
+ * @brief Keep large decompression windows of a RAR archive on disk, in an unnamed file in the engine's temporary directory.
+ */
+static void cli_rar_set_temp_dir(cli_ctx *ctx, void *hArchive)
+{
+    const char *dir = ctx->engine->tmpdir != NULL ? ctx->engine->tmpdir : cli_gettmpdir();
+
+    if (UNRAR_OK != cli_unrar_set_temp_dir(hArchive, dir)) {
+        cli_dbgmsg("RAR: Failed to set the temporary directory for the decompression window.\n");
+    }
+}
+
+/**
  * @brief Raise the limits-exceeded alert for a RAR archive whose skipped or extracted data used up the scan time or scan size.
  *
  * The time limit raises its own alert; otherwise the scan size alert is raised, so the archive is not reported clean.
@@ -336,6 +348,7 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx,
     }
 
     cli_rar_set_skip_limits(ctx, hArchive);
+    cli_rar_set_temp_dir(ctx, hArchive);
 
     /* If the archive header had a comment, write it to the comment dir. */
     if ((comment != NULL) && (comment_size > 0)) {

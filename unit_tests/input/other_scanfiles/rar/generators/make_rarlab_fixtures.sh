@@ -40,4 +40,6 @@ $R6 a -idq -ma4 -m3 $O/rar4-compressed-checked.rar d/1-text.txt
 $R7 a -idq -ma5 -m3 $O/rar5-compressed-checked.rar d/1-text.txt
 $R7 a -idq -ma5 -m3 -htb $O/rar5-blake2-checked.rar d/1-text.txt
 $R7 a -idq -ma5 -m0 -htb $O/rar5-stored-blake2-checked.rar checked.txt
+head -c 419430400 /dev/zero > big256.bin; printf 'ClamAV-RAR-window-marker-3b9d71\n' >> big256.bin
+$R7 a -idq -ma5 -m3 -md256m $O/rar5-large-window.rar big256.bin
 ls -la $O

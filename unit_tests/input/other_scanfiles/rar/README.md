@@ -23,6 +23,7 @@ rar 6.24 and 7.23).
 | `rar4-stored-checked.rar`, `rar4-compressed-checked.rar`, `rar5-stored-checked.rar`, `rar5-compressed-checked.rar`, `rar5-blake2-checked.rar`, `rar5-stored-blake2-checked.rar` | one entry each, stored and compressed, with a CRC32 or a BLAKE2sp checksum; the tests flip a data byte |
 | `rar4-filter-audio.rar`, `rar4-filter-delta.rar`, `rar4-filter-e8.rar`, `rar4-filter-rgb.rar`, `rar4-ppmd-e8.rar` | RAR 2.9 standard filters, and a filter over PPMd data |
 | `rar5-filter-delta.rar`, `rar5-filter-e8.rar` | RAR5 filters |
+| `rar5-large-window.rar` | one RAR5 entry of 419430432 bytes (zeros and a marker line) in 17 KB with a 256 MB dictionary (`rar a -ma5 -m3 -md256m`, rar 7.23): its decompression window is above the 64 MiB threshold for a file-backed window |
 
 The last two rows were written by a `rar` binary (RAR 2.9 archives: Unix host,
 real timestamps; RAR5: no other writer exists), but their exact commands were not
