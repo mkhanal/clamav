@@ -1,11 +1,17 @@
 /*
  * Fuzz target for the libclamunrar_iface functions with the libarchive backend:
  * unrar_open(), unrar_peek_file_header(), unrar_extract_file(),
- * unrar_skip_file() and unrar_close(), driven as cli_scanrar_file() drives them.
+ * unrar_skip_file(), unrar_set_temp_dir(), unrar_set_skip_limits() and
+ * unrar_close(), driven as cli_scanrar_file() drives them.
  *
  * The input is one archive file. If it holds further RAR signatures after the
  * first, each piece from a signature onward is written as the next volume of
  * the set (fuzz.part1.rar, fuzz.part2.rar, ...), so volume handling is reached.
+ *
+ * The temporary directory of the window and the skip limits are taken from
+ * the input: the directory is none, the fuzz directory, an empty string or a
+ * path that does not exist, and the limits are none, a few bytes up to some
+ * KiB, and a deadline that has passed or is a moment away.
  *
  * Copyright (C) 2025 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
  */
@@ -16,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 extern "C" {
@@ -69,7 +76,54 @@ uint32_t fnv1a(const uint8_t *data, size_t size)
     return h;
 }
 
+uint64_t now_usec()
+{
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    return static_cast<uint64_t>(tv.tv_sec) * 1000000ull + static_cast<uint64_t>(tv.tv_usec);
 }
+
+const char *pick_temp_dir(uint32_t choice)
+{
+    switch (choice % 4) {
+        case 0:
+            return nullptr;
+        case 1:
+            return g_dir;
+        case 2:
+            return "";
+        default:
+            return "/nonexistent-unrar-fuzz-dir";
+    }
+}
+
+uint64_t pick_max_bytes(uint32_t choice)
+{
+    switch (choice % 4) {
+        case 0:
+            return 0;
+        case 1:
+            return 1 + (choice >> 2) % 64;
+        case 2:
+            return 1 + (choice >> 2) % (16 * 1024);
+        default:
+            return kMaxExtractSize;
+    }
+}
+
+uint64_t pick_deadline(uint32_t choice)
+{
+    switch (choice % 3) {
+        case 0:
+            return 0;
+        case 1:
+            return 1;
+        default:
+            return now_usec() + 1 + (choice >> 2) % 50000;
+    }
+}
+
+} // namespace
 
 extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {
@@ -116,6 +170,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     cl_unrar_error_t ret = unrar_open(volumes[0], &archive, &comment, &comment_size, 0);
     if (ret == UNRAR_OK) {
+        (void)unrar_set_temp_dir(archive, pick_temp_dir(choices >> 4));
+        (void)unrar_set_skip_limits(archive, pick_max_bytes(choices >> 8), pick_deadline(choices >> 16));
+
         if (comment != nullptr && comment_size > 0) {
             volatile char sink = comment[comment_size - 1];
             (void)sink;
