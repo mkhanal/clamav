@@ -68,7 +68,7 @@ foreach(TARGET ${DBLOAD_TARGETS})
     set_target_properties(clamav_dbload_${TARGET}_fuzzer PROPERTIES LINK_FLAGS "-fsanitize=fuzzer")
 endforeach()
 
-if(ENABLE_UNRAR AND ENABLE_UNRAR_LIBARCHIVE)
+if(ENABLE_UNRAR)
     add_executable(clamav_unrar_iface_fuzzer)
     target_sources(clamav_unrar_iface_fuzzer
         PRIVATE clamav_unrar_iface_fuzzer.cpp)

@@ -103,7 +103,7 @@ cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint6
  * memory pressure the kernel writes it to disk. The file has no name and mode
  * 0600, and is released when the archive is closed or the process dies.
  * Without a call, or with NULL, every window stays in memory. Call before
- * extracting. Ignored by the RARLAB backend.
+ * extracting.
  *
  * @param hArchive The archive handle.
  * @param dir      The directory, or NULL.

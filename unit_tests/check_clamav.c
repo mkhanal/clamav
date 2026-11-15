@@ -789,7 +789,7 @@ static int get_test_file(int i, char *file, unsigned fsize, unsigned long *size)
     return fd;
 }
 
-#if defined(HAVE_UNRAR) && defined(UNRAR_BACKEND_LIBARCHIVE) && !defined(_WIN32)
+#if defined(HAVE_UNRAR) && !defined(_WIN32)
 /*
  * A RAR5 entry that does not declare its unpacked size ends only with its data. With the file size and scan size
  * limits off, as a program using libclamav can set them, the scan time limit is all that bounds decoding it:
@@ -1550,7 +1550,7 @@ static Suite *test_cl_suite(void)
     tcase_add_loop_test(tc_cl_scan, test_cl_scanfile_callback, 0, expect);
     tcase_add_loop_test(tc_cl_scan, test_cl_scanfile_callback_allscan, 0, expect);
 
-#if defined(HAVE_UNRAR) && defined(UNRAR_BACKEND_LIBARCHIVE) && !defined(_WIN32)
+#if defined(HAVE_UNRAR) && !defined(_WIN32)
     tcase_add_test(tc_cl_scan, test_cl_scanfile_rar_entry_of_unknown_size_is_bounded);
 #endif
 #ifndef _WIN32
