@@ -20,7 +20,8 @@
      "LibarchiveAddingTest2.html",
      "LibarchiveAddingTest.html"
     ]
-   }
+   },
+   "clean_accepted": "the other volumes sit beside it when scanned, and every entry is extracted and scanned"
   },
   {
    "id": "libarchive__test_rar_multivolume_multiple_files.part2.rar",
@@ -140,7 +141,8 @@
     "files": [
      "LibarchiveAddingTest.html"
     ]
-   }
+   },
+   "clean_accepted": "the other volumes sit beside it when scanned, and every entry is extracted and scanned"
   },
   {
    "id": "libarchive__test_rar_multivolume_single_file.part2.rar",
@@ -205,7 +207,8 @@
      "testdir/testsubdir/LibarchiveAddingTest2.html",
      "testdir/testsubdir/LibarchiveAddingTest.html"
     ]
-   }
+   },
+   "clean_accepted": "the other volumes sit beside it when scanned, and every entry is extracted and scanned"
   },
   {
    "id": "libarchive__test_rar_multivolume_uncompressed_files.part02.rar",
@@ -2550,7 +2553,8 @@
     "files": [
      "LibarchiveAddingTest.html"
     ]
-   }
+   },
+   "clean_accepted": "the other volumes sit beside it when scanned, and every entry is extracted and scanned"
   },
   {
    "id": "generated__bomb-rar4-high-ratio.rar",
