@@ -9,6 +9,7 @@ extracts.
 """
 
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -300,6 +301,29 @@ class TC(testcase.TestCase):
         ):
             with self.subTest(byte=name):
                 self.scan_damaged_copy('rar5-compressed-checked.rar', offset, size, sha256, 'rar5-compressed-checked.rar-' + name)
+
+    def test_archive_without_a_valid_header_is_not_a_clean_end(self):
+        self.step_name('Test an archive with a signature but no valid header is an error, an empty archive is not')
+
+        # The libarchive backend reports an archive that has a signature and
+        # no valid main header, or a header it cannot read, as an error
+        # reading the header; an empty archive, with a valid main header and
+        # no entries, is read to its end.
+        for archive in ('rar4-signature-only.rar', 'rar5-signature-only.rar', 'rar5-truncated-header.rar'):
+            with self.subTest(archive=archive):
+                output = self.scan(TC.path_rar / archive, '--debug')
+                assert output.ec == 0  # clean
+                if TC.backend == 'rarlab':
+                    assert 'RAR: No more files in archive' in output.out + output.err
+                else:
+                    assert re.search(r'RAR: Error \(\d+\) reading file header', output.out + output.err)
+
+        for archive in ('rar4-empty.rar', 'rar5-empty.rar'):
+            with self.subTest(archive=archive):
+                output = self.scan(TC.path_rar / archive, '--debug')
+                assert output.ec == 0  # clean
+                assert 'RAR: No more files in archive' in output.out + output.err
+                assert 'reading file header' not in output.out + output.err
 
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
