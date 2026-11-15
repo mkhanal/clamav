@@ -28,6 +28,12 @@ The last two rows were written by a `rar` binary (RAR 2.9 archives: Unix host,
 real timestamps; RAR5: no other writer exists), but their exact commands were not
 recorded.
 
+## Derived from a RARLAB fixture
+
+| Fixture | Covers |
+|---|---|
+| `rar5-unknown-size-600m.rar` | one RAR5 entry of 629145600 zero bytes in 26 KB (`rar a -ma5 -m3`, rar 7.23) with the unknown unpacked size flag (0x08 of the file flags) set and the header checksum recomputed: nothing but its data ends the entry |
+
 ## Taken from libarchive
 
 | Fixture | Covers |

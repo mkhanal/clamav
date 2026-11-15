@@ -241,6 +241,18 @@ static void cli_rar_set_skip_limits(cli_ctx *ctx, void *hArchive)
 }
 
 /**
+ * @brief Raise the limits-exceeded alert for a RAR archive whose skipped or extracted data used up the scan time or scan size.
+ *
+ * The time limit raises its own alert; otherwise the scan size alert is raised, so the archive is not reported clean.
+ */
+static void cli_rar_report_limit(cli_ctx *ctx)
+{
+    if (CL_SUCCESS == cli_checktimelimit(ctx)) {
+        cli_append_potentially_unwanted_if_heur_exceedsmax(ctx, "Heuristics.Limits.Exceeded.MaxScanSize");
+    }
+}
+
+/**
  * @brief Skip the next file of a RAR archive.
  *
  * @return true if skipped. false if the archive cannot be read further. When
@@ -257,9 +269,7 @@ static bool cli_rar_skip_file(cli_ctx *ctx, void *hArchive, bool *incomplete)
 
     if (UNRAR_ELIMIT == unrar_ret) {
         cli_dbgmsg("RAR: Skipping a file exceeded the scan time or scan size limit.\n");
-        if (CL_SUCCESS == cli_checktimelimit(ctx)) {
-            cli_append_potentially_unwanted_if_heur_exceedsmax(ctx, "Heuristics.Limits.Exceeded.MaxScanSize");
-        }
+        cli_rar_report_limit(ctx);
     } else {
         *incomplete = true;
     }
@@ -272,6 +282,8 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx,
     cl_unrar_error_t unrar_ret = UNRAR_ERR;
 
     unsigned int file_count = 0;
+
+    bool limit_exceeded = false;
 
     uint32_t nEncryptedFilesFound = 0;
 
@@ -466,6 +478,13 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx,
                 cli_dbgmsg("RAR: Extracting file: %s to %s\n", metadata.filename, extract_fullpath);
 
                 unrar_ret = cli_unrar_extract_file(hArchive, extract_fullpath, NULL);
+                if (unrar_ret == UNRAR_ELIMIT) {
+                    /* The file has no declared size and its data went on past the scan limits: scan what was written, then stop. */
+                    cli_dbgmsg("RAR: Extracting a file exceeded the scan time or scan size limit.\n");
+                    cli_rar_report_limit(ctx);
+                    limit_exceeded = true;
+                    unrar_ret      = UNRAR_OK;
+                }
                 if (unrar_ret == UNRAR_EDATA) {
                     /* Damaged data: what could be decoded was written and is scanned. */
                     cli_dbgmsg("RAR: Damaged data in file: %s\n", metadata.filename);
@@ -555,6 +574,10 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx,
         if (NULL != filename_base) {
             free(filename_base);
             filename_base = NULL;
+        }
+
+        if (limit_exceeded) {
+            break;
         }
 
     } while (status == CL_SUCCESS);

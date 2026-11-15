@@ -82,6 +82,10 @@ cl_unrar_error_t unrar_skip_file(void *hArchive);
  * used up, unrar_skip_file() returns UNRAR_ELIMIT and the archive cannot be
  * read further. A backend whose skips cost nothing accepts and ignores it.
  *
+ * The same bounds apply to unrar_extract_file() for an entry whose unpacked
+ * size the archive does not declare, which nothing else ends: it returns
+ * UNRAR_ELIMIT with what was written up to then in the destination file.
+ *
  * @param hArchive      The archive handle.
  * @param max_bytes     Bytes that may be decoded and discarded; 0 for no limit.
  * @param deadline_usec Wall clock time in microseconds since the Unix epoch
