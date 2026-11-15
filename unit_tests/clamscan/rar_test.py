@@ -489,6 +489,15 @@ class TC(testcase.TestCase):
                 assert output.ec == 0  # clean: the damaged entry is not the intact one
                 assert 'runtime error' not in output.out + output.err
 
+    def test_split_entry_whose_next_part_has_another_name_keeps_its_decoder(self):
+        self.step_name('Test a split RAR entry whose next part is another entry ends without a crash')
+
+        testfile = TC.path_rar / 'rar4-split-entry-next-part-name-mismatch.rar'
+        output = self.scan(testfile, '--debug')
+        assert output.ec in (0, 1)
+        assert 'runtime error' not in output.out + output.err
+        assert 'Sanitizer' not in output.out + output.err
+
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
 
