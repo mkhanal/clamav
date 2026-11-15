@@ -1,11 +1,14 @@
 # order<TAB>slug<TAB>kind<TAB>title<TAB>ERE matched against the commit subject; the first matching line owns the commit.
-# kind patch: shipped as clamcove-<version>-<order>-<slug>.patch; kind none: CI, tests and tooling, not shipped as a patch.
+# kind patch: a change shipped as a net diff, clamcove-<version>-<position>-<slug>.patch (merged with the changes it cannot be split from);
+# kind none: CI under .github, not shipped; kind paths: one line, the space-separated paths of tests, test inputs, fuzz targets, tooling
+# and docs that every change edits, shipped as the last patch for all changes together. Lines are tried in file order, so a narrower
+# regex goes before a wider one; the order column names the change and sorts the series before merging.
 # A commit between the upstream tag and the release tag that matches no line fails the release job.
-07	rar20-decoder	patch	RAR 2.0 and 2.6 decoder for libarchive, ported from rardecode (BSD-2-Clause)	^libclamarchive: (Decode RAR 2\.0|Remove the RAR 2\.0|Read the block header of an empty entry in a solid RAR 2\.0|Clamp the end of a RAR 2\.0)|^unit_tests: Match the damaged RAR 2\.0
-02	rar-1520-decoder	patch	RAR 1.5 and RAR 2.0 decoder for libarchive	^libclamarchive: Decode RAR 1\.5
-01	libarchive-rar	patch	RAR read through vendored libarchive instead of RARLAB unRAR (ENABLE_UNRAR_LIBARCHIVE)	^(libclamarchive|libclamunrar_iface|rar): |^unit_tests: Test RAR
+07	rar20-decoder	patch	RAR 2.0 and 2.6 decoder for libarchive, ported from rardecode (BSD-2-Clause)	^libclamarchive: (Decode RAR 2\.0|Remove the RAR 2\.0|Read the block header of an empty entry in a solid RAR 2\.0|Clamp the end of a RAR 2\.0)|^unit_tests: Match the damaged RAR 2\.0|^tests: Add archives written by RARLAB RAR 2\.50
+01	libarchive-rar	patch	RAR read through vendored libarchive instead of RARLAB unRAR (ENABLE_UNRAR_LIBARCHIVE), no RARLAB unRAR code	^(libclamarchive|libclamunrar_iface|rar|fuzz|tools/rar-parity): |^unit_tests: (Test RAR|Run the RAR5)
 03	pcre-container-check	patch	Container constraint of a logical signature checked before its PCRE subsignatures run	^libclamav: Skip PCRE
 04	incomplete-rar-alert	patch	Opt-in alert for RAR archives that could not be fully extracted and scanned	[Ii]ncomplete[- ]RAR|^libclamav: Add an opt-in alert for a RAR archive
-99	ci-and-tests	none	CI, tests and tooling	^(ci|test|tests|tools|fuzz|docs|build)[:(/]
-05	clamcove-naming	patch	ClamCove version string, README and NOTICE	ClamCove|^(version|notice|readme): |^Version as |^unit_tests: Pass CLAMCOVE_VERSION
-06	windows-build-fixes	patch	Windows with vcpkg: OpenSSL library directory taken from the release file of a per-configuration list, RAR test output matched by file name	^(libclamav_rust: Take OpenSSL|Windows: )
+99	ci-and-tests	none	CI workflows and release inputs under .github	^ci: 
+05	clamcove-naming	patch	ClamCove version string and NOTICE	ClamCove|^(version|notice|readme): |^Version as |^unit_tests: Pass CLAMCOVE_VERSION
+06	windows-build-fixes	patch	Windows with vcpkg: OpenSSL library directory taken from the release file of a per-configuration list	^(libclamav_rust: Take OpenSSL|Windows: )
+98	tests-and-docs	paths	Tests, test inputs, fuzz targets, RAR parity tooling and README of all the changes above, in one patch	unit_tests tools fuzz README.md
