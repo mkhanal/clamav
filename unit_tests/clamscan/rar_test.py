@@ -15,9 +15,14 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+import rar5_craft
 import testcase
 
 MARKER = b'ClamAV-RAR-backend-test-marker-6f1c2e'
+
+# What the entry of each RAR5 fixture extracts to: (size, SHA-256).
+COMPRESSED_ENTRY = (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')
+STORED_ENTRY = (4000, 'c98ce101b24950ffda930e9bb352eb2caf478ba84b56648fe80528ba71f7eab0')
 
 # Archive -> what every entry must extract to: (size, SHA-256).
 EXTRACTED = {
@@ -188,7 +193,7 @@ class TC(testcase.TestCase):
         super(TC, self).tearDown()
         self.verify_valgrind_log()
 
-    def scan(self, testfile, options='', path_db=None):
+    def scan(self, testfile, options='', path_db=None, memory_limit_kb=None):
         if path_db is None:
             path_db = TC.path_marker_db
 
@@ -200,6 +205,8 @@ class TC(testcase.TestCase):
             path_db=path_db,
             testfile=testfile,
         )
+        if memory_limit_kb is not None:
+            command = 'ulimit -v {} && {}'.format(memory_limit_kb, command)
         return self.execute_command(command)
 
     def test_every_compression_version_and_filter_extracts_exactly(self):
@@ -697,3 +704,216 @@ class TC(testcase.TestCase):
 
         output = self.scan(testfile, '--alert-incomplete-rar=yes --alert-encrypted-archive=yes')
         self.verify_output(output.out, expected=['{}: Heuristics.Encrypted.RAR FOUND'.format(testfile.name)])
+
+    def write_rar5(self, name, archive):
+        path = TC.path_tmp / name
+        path.write_bytes(archive.build())
+        return path
+
+    def assert_entry_found(self, testfile, entry, options=''):
+        size, sha256 = entry
+        path_db = TC.path_tmp / (sha256 + '.hsb')
+        path_db.write_text('{}:{}:RAR_ENTRY\n'.format(sha256, size))
+
+        output = self.scan(testfile, options, path_db=path_db)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_ENTRY.UNOFFICIAL FOUND'.format(testfile.name)])
+
+    def test_malformed_redirect_record_does_not_make_the_entry_a_link(self):
+        self.step_name('Test an entry whose redirect record is malformed is extracted and scanned, not skipped as a link')
+
+        # unRAR takes any redirect record with a type for a link and does not
+        # unpack the entry. This backend only does when the record is whole,
+        # so what a malformed one is attached to is scanned.
+        if TC.backend != 'libarchive':
+            self.skipTest('The RARLAB backend skips the entry')
+
+        symlink = rar5_craft.vint(1)
+        for name, record in (
+            ('empty-target', symlink + rar5_craft.vint(0) + rar5_craft.vint(0)),
+            ('target-beyond-record', symlink + rar5_craft.vint(0) + rar5_craft.vint(40) + b'abc'),
+            ('target-too-long', symlink + rar5_craft.vint(0) + rar5_craft.vint(5000) + b'a' * 5000),
+            ('without-target', symlink + rar5_craft.vint(0)),
+            ('type-only', symlink),
+        ):
+            with self.subTest(record=name):
+                archive = rar5_craft.Archive((TC.path_rar / 'rar5-compressed-checked.rar').read_bytes())
+                header = archive.files()[0].header()
+                header.set_records(header.records() + [(rar5_craft.EXTRA_REDIR, record)])
+                archive.files()[0].body = header.build()
+
+                self.assert_entry_found(self.write_rar5('redirect-' + name + '.rar', archive), COMPRESSED_ENTRY)
+
+    def assert_both_entries_found(self, name, archive, complete):
+        testfile = self.write_rar5(name, archive)
+        for entry in (COMPRESSED_ENTRY, STORED_ENTRY):
+            self.assert_entry_found(testfile, entry)
+
+        if complete:
+            output = self.scan(testfile, '--alert-incomplete-rar=yes')
+            assert 'Heuristics.Incomplete.RAR' not in output.out
+
+    def test_rar5_entry_data_starts_at_the_end_of_its_header(self):
+        self.step_name('Test the data of a RAR5 entry and the headers after it are read from the end of its header')
+
+        # The data follows the header block, wherever the fields in it end.
+        # unRAR reads both entries of each archive; so does this backend. A
+        # record that does not hold what its kind needs is left out of the
+        # entry by this backend, while unRAR reads the bytes after it: the
+        # archive is then not reported as complete by unRAR, but is by this
+        # backend only for the records it understood.
+        zeros = bytes(16)
+        for name, complete, edit in (
+            ('padding-after-name', True, lambda h: setattr(h, 'padding', zeros)),
+            ('padding-after-extra', True, lambda h: setattr(h, 'trailer', zeros)),
+            ('padding-around-extra', True, lambda h: (setattr(h, 'padding', zeros), setattr(h, 'trailer', zeros))),
+            ('hash-record-too-short', False, lambda h: h.set_records([(2, rar5_craft.vint(0) + bytes(10))] + h.records())),
+            ('time-record-too-short', False, lambda h: h.set_records([(3, rar5_craft.vint(0x0b))] + h.records())),
+            ('record-longer-than-area', False, lambda h: setattr(h, 'extra', h.extra + rar5_craft.vint(50) + rar5_craft.vint(7))),
+        ):
+            with self.subTest(header=name):
+                archive = rar5_craft.Archive.join(
+                    (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
+                    (TC.path_rar / 'rar5-stored-checked.rar').read_bytes())
+                archive.edit_file(0, edit)
+                self.assert_both_entries_found('header-' + name + '.rar', archive, complete)
+
+    def entry_is_found(self, testfile, entry):
+        size, sha256 = entry
+        path_db = TC.path_tmp / (sha256 + '.hsb')
+        path_db.write_text('{}:{}:RAR_ENTRY\n'.format(sha256, size))
+
+        output = self.scan(testfile, path_db=path_db)
+        return 'FOUND' in output.out
+
+    def test_rar5_entry_with_a_header_the_reader_refuses_does_not_end_the_archive(self):
+        self.step_name('Test the entries after one whose RAR5 header is refused are still scanned')
+
+        # What unRAR extracts, this backend extracts, whatever the header of the
+        # first entry declares: a solid entry with no window before it, a
+        # dictionary of up to 4 GB or a name of any length. Where unRAR cannot
+        # extract the entry (no name, no data declared), the entry after it is
+        # still scanned and the archive is not reported as complete.
+        both = (COMPRESSED_ENTRY, STORED_ENTRY)
+        for name, main_flags, edit, found, complete in (
+            ('solid-without-window', None, lambda h: h.set_compression(solid=True), both, True),
+            ('solid-without-window-in-solid-archive', 4, lambda h: h.set_compression(solid=True), both, True),
+            ('dictionary-128M', None, lambda h: h.set_compression(dictionary=10), both, True),
+            ('dictionary-1G', None, lambda h: h.set_compression(dictionary=13), both, True),
+            ('dictionary-4G', None, lambda h: h.set_compression(dictionary=15), both, True),
+            ('solid-dictionary-1G', 4, lambda h: h.set_compression(dictionary=13), both, True),
+            ('name-of-3000-bytes', None, lambda h: setattr(h, 'name', b'a' * 3000), both, True),
+            ('no-name', None, lambda h: setattr(h, 'name', b''), (STORED_ENTRY,), False),
+            ('no-data-declared', None, lambda h: (setattr(h, 'has_data', False), setattr(h, 'data_size', 0)), (STORED_ENTRY,), False),
+        ):
+            with self.subTest(header=name):
+                archive = rar5_craft.Archive.join(
+                    (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
+                    (TC.path_rar / 'rar5-stored-checked.rar').read_bytes())
+                if main_flags is not None:
+                    archive.set_main_flags(main_flags)
+                archive.edit_file(0, edit)
+                if name == 'no-data-declared':
+                    archive.files()[0].data = b''
+                testfile = self.write_rar5('refused-' + name + '.rar', archive)
+
+                for entry in both:
+                    assert self.entry_is_found(testfile, entry) == (entry in found)
+
+                output = self.scan(testfile, '--alert-incomplete-rar=yes')
+                assert ('Heuristics.Incomplete.RAR' in output.out) == (not complete)
+
+    def test_rar5_solid_entry_declaring_a_larger_dictionary_than_its_stream(self):
+        self.step_name('Test a solid RAR5 entry that declares another dictionary size than the entries before it is extracted')
+
+        archive = rar5_craft.Archive.join(
+            (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
+            (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes())
+        archive.set_main_flags(4)
+        for dictionary in (1, 6):
+            with self.subTest(dictionary=dictionary):
+                archive.edit_file(1, lambda h: h.set_compression(solid=True, dictionary=dictionary))
+                testfile = self.write_rar5('solid-dictionary-{}.rar'.format(dictionary), archive)
+
+                self.assert_entry_found(testfile, COMPRESSED_ENTRY)
+                output = self.scan(testfile, '--alert-incomplete-rar=yes')
+                assert 'Heuristics.Incomplete.RAR' not in output.out
+
+    def test_rar5_dictionary_beyond_what_is_allocated_is_reported(self):
+        self.step_name('Test a RAR5 solid stream that needs a window larger than 1 GB is reported incomplete and the entries after it are scanned')
+
+        # unRAR on a 64-bit system extracts it; this backend allocates 1 GB of
+        # window at most.
+        if TC.backend != 'libarchive':
+            self.skipTest('The RARLAB backend extracts the entry')
+
+        archive = rar5_craft.Archive.join(
+            (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
+            (TC.path_rar / 'rar5-stored-checked.rar').read_bytes())
+        archive.set_main_flags(4)
+
+        def declare_a_stream_of_1500_megabytes(header):
+            header.set_compression(dictionary=15)
+            header.unpacked_size = 1500 << 20
+
+        archive.edit_file(0, declare_a_stream_of_1500_megabytes)
+        testfile = self.write_rar5('solid-window-beyond-1G.rar', archive)
+
+        limits = '--max-filesize=2000M --max-scansize=4000M'
+        self.assert_entry_found(testfile, STORED_ENTRY, limits)
+        output = self.scan(testfile, limits + ' --alert-incomplete-rar=yes')
+        assert 'Heuristics.Incomplete.RAR' in output.out
+
+    def solid_skip_archive(self, edit):
+        archive = rar5_craft.Archive((TC.path_rar / 'rar5-solid-skip.rar').read_bytes())
+        archive.edit_file(0, edit)
+        return archive
+
+    def test_rar5_solid_entry_declaring_a_dictionary_of_4_gigabytes_is_decoded(self):
+        self.step_name('Test the entries after a solid RAR5 entry that declares a dictionary of 4 GB are scanned')
+
+        # marker.txt is coded against big.txt before it, so it is found only
+        # if big.txt is decoded as part of the stream. The dictionary is
+        # larger than anything the stream writes; unRAR extracts both.
+        archive = self.solid_skip_archive(lambda h: h.set_compression(dictionary=15))
+        testfile = self.write_rar5('solid-dictionary-4G-in-stream.rar', archive)
+
+        output = self.scan(testfile, '--alert-incomplete-rar=yes')
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
+
+    def test_rar5_window_is_sized_to_what_the_stream_writes(self):
+        self.step_name('Test a solid RAR5 stream that declares a dictionary of 1 GB does not need 1 GB of address space')
+
+        # The window is sized to the data the stream writes, not to the
+        # dictionary a 200-byte header declares: a few kilobytes of archive
+        # do not allocate a gigabyte.
+        if TC.backend != 'libarchive':
+            self.skipTest('The RARLAB backend allocates the dictionary')
+        if not sys.platform.startswith('linux') or TC.valgrind != '':
+            self.skipTest('The address space is limited with ulimit -v on Linux, without valgrind')
+        if os.getenv('ASAN_OPTIONS') is not None or os.getenv('UBSAN_OPTIONS') is not None:
+            self.skipTest('A sanitizer reserves address space the limit does not leave')
+
+        archive = self.solid_skip_archive(lambda h: h.set_compression(dictionary=13))
+        testfile = self.write_rar5('solid-dictionary-1G-in-stream.rar', archive)
+
+        output = self.scan(testfile, '--alert-incomplete-rar=yes', memory_limit_kb=1000000)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
+
+    def test_rar5_entry_without_a_name_does_not_break_its_solid_stream(self):
+        self.step_name('Test the entries after a nameless entry of a solid RAR5 archive are scanned')
+
+        # marker.txt is coded against big.txt before it, so it is found only
+        # if big.txt is decoded as part of the stream, though big.txt itself
+        # cannot be extracted without a name. unRAR extracts marker.txt.
+        archive = self.solid_skip_archive(lambda h: setattr(h, 'name', b''))
+        testfile = self.write_rar5('solid-no-name.rar', archive)
+
+        output = self.scan(testfile, '--alert-incomplete-rar=yes')
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
+
+        output = self.scan(testfile, '--alert-incomplete-rar=yes --allmatch')
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name), '{}: Heuristics.Incomplete.RAR FOUND'.format(testfile.name)])

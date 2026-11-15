@@ -1169,6 +1169,8 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     size_t size;
     la_int64_t offset;
     uint64_t remaining;
+    uint64_t output_limit = UINT64_MAX;
+    uint64_t written      = 0;
     int r;
 
     if (NULL == h || NULL == destPath) {
@@ -1205,6 +1207,15 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     /* unRAR writes at most the unpacked size the header declares. */
     remaining = info.unpacked_size_unknown ? UINT64_MAX : info.unpacked_size;
 
+    /*
+     * Without a declared size nothing but the data ends the entry, so it is
+     * bounded by what is left of the scan size and by the scan deadline, as
+     * skipping is.
+     */
+    if (info.unpacked_size_unknown && h->skip_bytes_limited) {
+        output_limit = h->skip_bytes_left;
+    }
+
     for (;;) {
         r = archive_read_data_block(h->archive, &buf, &size, &offset);
         if (r == ARCHIVE_EOF) {
@@ -1226,6 +1237,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
             size = (size_t)remaining;
         }
         remaining -= size;
+        written += size;
         if (size > 0) {
             const char *p = buf;
             while (size > 0) {
@@ -1238,6 +1250,13 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
                 size -= (size_t)n;
             }
             if (status != UNRAR_OK) {
+                break;
+            }
+        }
+        if (info.unpacked_size_unknown) {
+            if (written > output_limit || skip_deadline_passed(h)) {
+                unrar_dbgmsg("unrar_extract_file: Output of an entry of unknown size reached the scan limits.\n");
+                status = UNRAR_ELIMIT;
                 break;
             }
         }
@@ -1296,6 +1315,7 @@ cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint6
     h->skip_bytes_limited = max_bytes != 0;
     h->skip_bytes_left    = max_bytes;
     h->skip_deadline_usec = deadline_usec;
+    (void)archive_read_rar_set_output_bound(h->archive, max_bytes);
     return UNRAR_OK;
 }
 
