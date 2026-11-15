@@ -19,6 +19,7 @@ rar 6.24 and 7.23).
 | `rar4-solid-skip-budget.rar`, `rar5-solid-skip-budget.rar` | two entries over `--max-filesize` followed by one in the same solid stream |
 | `rar4-comment.rar`, `rar5-comment.rar` | archive comment |
 | `rar4-encrypted-data.rar`, `rar4-encrypted-headers.rar`, `rar5-encrypted-data.rar`, `rar5-encrypted-headers.rar` | encrypted entries and headers |
+| `rar4-split-entry-next-part-name-mismatch.rar` | 109 bytes: a RAR 2.9 entry split across volumes whose next part is a RAR 2.0 entry of another name (a fuzzer reproducer); scanned alone it must end without a crash |
 | `rar4-volume.part1.rar`, `rar4-volume.part2.rar`, `rar5-volume.part1.rar`, `rar5-volume.part2.rar` | a file split across volumes |
 | `rar4-stored-checked.rar`, `rar4-compressed-checked.rar`, `rar5-stored-checked.rar`, `rar5-compressed-checked.rar`, `rar5-blake2-checked.rar`, `rar5-stored-blake2-checked.rar` | one entry each, stored and compressed, with a CRC32 or a BLAKE2sp checksum; the tests flip a data byte |
 | `rar4-filter-audio.rar`, `rar4-filter-delta.rar`, `rar4-filter-e8.rar`, `rar4-filter-rgb.rar`, `rar4-ppmd-e8.rar` | RAR 2.9 standard filters, and a filter over PPMd data |
