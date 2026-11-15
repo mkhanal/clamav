@@ -3861,6 +3861,12 @@ again:
     else if (*avail == 0 && rar->main_flags & MHD_VOLUME &&
       rar->file_flags & FHD_SPLIT_AFTER)
     {
+      const char entry_method = rar->compression_method;
+      const int entry_unp_ver = rar->unp_ver;
+      const unsigned entry_flags = rar->file_flags;
+      const int64_t entry_packed_size = rar->packed_size;
+      const int64_t entry_unp_size = rar->unp_size;
+
       rar->filename_must_match = 1;
       ret = archive_read_format_rar_read_header(a, a->entry);
       if (ret == (ARCHIVE_EOF))
@@ -3870,7 +3876,14 @@ again:
       }
       rar->filename_must_match = 0;
       if (ret != (ARCHIVE_OK))
+      {
+        rar->compression_method = entry_method;
+        rar->unp_ver = entry_unp_ver;
+        rar->file_flags = entry_flags;
+        rar->packed_size = entry_packed_size;
+        rar->unp_size = entry_unp_size;
         return NULL;
+      }
       goto again;
     }
   }
