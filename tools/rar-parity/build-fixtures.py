@@ -382,7 +382,10 @@ def main() -> None:
         elif "password" in log or "encrypt" in log:
             exp = {"kind": "encrypted"}
             if names and "partial" in base:
-                exp = {"kind": "detect", "detect": names, "note": "some entries encrypted"}
+                if r["source"] == "generated":
+                    exp = {"kind": "detect", "detect": names, "note": "some entries encrypted"}
+                else:
+                    exp = {"kind": "encrypted", "note": "some entries encrypted; both builds report only Heuristics.Encrypted.RAR, the signature of the unencrypted entry never matches"}
         else:
             exp = {"kind": "error"}
         row = {
