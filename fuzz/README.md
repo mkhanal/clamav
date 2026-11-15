@@ -23,13 +23,13 @@ For more information on how this is set up, see: [ideal OSS-Fuzz integration](ht
 
 `clamav_unrar_iface_fuzzer` drives the five `libclamunrar_iface` functions (`unrar_open`,
 `unrar_peek_file_header`, `unrar_extract_file`, `unrar_skip_file`, `unrar_close`) over one archive file, the way
-`cli_scanrar_file()` does. It exists only with `-DENABLE_UNRAR_LIBARCHIVE=ON`. If the input holds more RAR
+`cli_scanrar_file()` does. It exists only with RAR enabled (`ENABLE_UNRAR`, the default). If the input holds more RAR
 signatures after the first, each piece is written as the next volume of the set, so volume handling is reached.
 
 Build and run (clang, AddressSanitizer + UndefinedBehaviorSanitizer):
 
     export CC=clang CXX=clang++ SANITIZER=address,undefined
-    cmake -S . -B build-fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_FUZZ=ON -DENABLE_UNRAR_LIBARCHIVE=ON \
+    cmake -S . -B build-fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_FUZZ=ON \
         -DENABLE_APP=OFF -DENABLE_EXAMPLES=OFF -DENABLE_MAN_PAGES=OFF -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
     cmake --build build-fuzz --target clamav_unrar_iface_fuzzer
     UBSAN_OPTIONS=halt_on_error=1 TMPDIR=/dev/shm build-fuzz/fuzz/clamav_unrar_iface_fuzzer \

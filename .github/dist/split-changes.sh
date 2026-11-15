@@ -16,6 +16,9 @@
 # gives exactly the release tree (without .github). Nothing is replayed, so nothing depends on the order in which
 # commits of different changes were made.
 #
+# Deleted files. A patch records a deletion as a header with no removed text (git diff --irreversible-delete), so no patch
+# carries the text of a file the release does not contain; apply-patch.sh applies such a patch.
+#
 # Interdependent changes. Changes whose commits cannot be reverted cleanly one without the other, because they edit the
 # same lines, cannot be split: they become one patch whose title says so ("<title> + <title>; one patch, the changes
 # edit the same lines"). The patches come in series order: the merged ones first, the independent ones after them.
@@ -204,7 +207,7 @@ for i in "${shipped[@]+"${shipped[@]}"}"; do
   {
     echo "Subject: [PATCH $n/${#shipped[@]}] $title"
     echo
-    series_diff "$i" --binary --no-renames
+    series_diff "$i" --binary --no-renames --irreversible-delete
   } > "$out/$file"
   echo "- \`$file\`: $title" >> "$notes"
 done

@@ -53,7 +53,7 @@ jobs:
           CXX: clang++
           SANITIZER: address
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_FUZZ=ON -DENABLE_UNRAR_LIBARCHIVE=ON
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_FUZZ=ON
           cmake --build build --target clamav_unrar_iface_fuzzer --parallel
 
       - name: Restore the corpus

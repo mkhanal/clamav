@@ -1,11 +1,11 @@
 #!/bin/sh
-# Proves compare.py fails when it should. Needs the reference image (default clamav-rar-unrar).
+# Proves compare.py fails when it should. Needs the reference image (default clamav-rar-official).
 #   selftest.sh [reference-image]
 # 1. B = a fake build whose clamscan reports every file clean: compare.py must exit non-zero and
 #    name "B detects less than A" and "B clean where A alerted".
 # 2. B = the reference build itself: compare.py must report no A-versus-B difference.
 set -u
-IMAGE=${1:-clamav-rar-unrar}
+IMAGE=${1:-clamav-rar-official}
 HERE=$(cd "$(dirname "$0")" && pwd)
 T=$(mktemp -d)
 mkdir -p "$T/bin" "$T/lib"

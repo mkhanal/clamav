@@ -9,15 +9,15 @@ open source antivirus engine. It enhances ClamAV for two reasons:
   a fixed memory limit.
 - **RAR without the unRAR licence.** ClamAV reads RAR archives with RARLAB's
   unRAR code, whose licence is not an open source licence and restricts how the
-  code may be used. ClamCove can be built to read RAR through
+  code may be used. ClamCove reads RAR through
   [libarchive](https://github.com/libarchive/libarchive) (BSD-2-Clause)
   instead, with no unRAR code at all, so it can be shipped wherever that
   licence is not acceptable.
 
 ClamCove is versioned on ClamAV's version:
 `<clamav major>.<minor>.<patch>.<clamcove release>`, the OpenResty convention,
-so ClamCove 1.5.4.3 is ClamAV 1.5.4 plus ClamCove release 3. Container images
-are tagged with the exact version (`ghcr.io/mkhanal/clamcove:1.5.4.3`) and with
+so ClamCove 1.5.4.2 is ClamAV 1.5.4 plus ClamCove release 2. Container images
+are tagged with the exact version (`ghcr.io/mkhanal/clamcove:1.5.4.2`) and with
 the floating tags `1.5.4`, `1.5`, `1` and `latest`, each moved to the newest
 ClamCove release on that line.
 
@@ -30,25 +30,27 @@ change it makes accepted into ClamAV, so that it shrinks back to ClamAV.
 | Difference | ClamAV 1.5.4 | ClamCove | Upstream status |
 | --- | --- | --- | --- |
 | PCRE container check | PCRE subsignatures are evaluated whatever the container | PCRE subsignatures whose container cannot match are skipped | [Cisco-Talos/clamav#1886](https://github.com/Cisco-Talos/clamav/issues/1886), open |
-| RAR read through libarchive | RAR read by RARLAB unRAR code | RAR read through libarchive, built with `-DENABLE_UNRAR_LIBARCHIVE=ON`; no RARLAB unRAR code in that build ([#7](https://github.com/mkhanal/clamcove/pull/7)). The ClamAV default build is unchanged | Not yet offered |
-| Large RAR windows on disk | A RAR decompression window (up to 1 GiB) is anonymous memory, so concurrent scans of large archives can exhaust a memory limit | In the libarchive RAR build, a window above 64 MiB is a mapping of an unnamed 0600 file in the temporary directory (`TemporaryDirectory`, `--tempdir`) that the kernel can write to disk and that disappears with the process; needs window size × concurrent scans of free disk, falls back to memory when the file cannot be made, always memory on Windows ([#26](https://github.com/mkhanal/clamcove/issues/26)) | Not yet offered |
+| RAR read through libarchive | RAR read by RARLAB unRAR code | RAR read through libarchive, on by default and turned off with `-DENABLE_UNRAR=OFF` ([#7](https://github.com/mkhanal/clamcove/pull/7)) | Not yet offered |
+| No RARLAB code | `libclamunrar/` and `COPYING.unrar` are in the source | ClamCove carries no RARLAB code: no unRAR source or licence file in the source tree, a release or an image ([#34](https://github.com/mkhanal/clamcove/issues/34)) | ClamCove only, never offered |
+| Large RAR windows on disk | A RAR decompression window (up to 1 GiB) is anonymous memory, so concurrent scans of large archives can exhaust a memory limit | A window above 64 MiB is a mapping of an unnamed 0600 file in the temporary directory (`TemporaryDirectory`, `--tempdir`) that the kernel can write to disk and that disappears with the process; needs window size × concurrent scans of free disk, falls back to memory when the file cannot be made, always memory on Windows ([#26](https://github.com/mkhanal/clamcove/issues/26)) | Not yet offered |
 | Alert on an incomplete RAR | A RAR that cannot be fully scanned reports clean | Opt-in `AlertIncompleteRAR` / `--alert-incomplete-rar` raises `Heuristics.Incomplete.RAR` ([#11](https://github.com/mkhanal/clamcove/pull/11)) | Not yet offered |
-| RAR 1.5, RAR 2.0 and RAR 2.6 archives | Extracted by unRAR | RAR 2.0 and 2.6 are extracted in the libarchive build by a decoder ported from [rardecode](https://github.com/nwaples/rardecode) (BSD-2-Clause) ([#16](https://github.com/mkhanal/clamcove/pull/16)). RAR 1.5 is not extracted there, and the build alerts on it when the option above is on ([#7](https://github.com/mkhanal/clamcove/pull/7)) | Not yet offered |
+| RAR 1.5, RAR 2.0 and RAR 2.6 archives | Extracted by RARLAB unRAR code | RAR 2.0 and 2.6 are extracted by a decoder ported from [rardecode](https://github.com/nwaples/rardecode) (BSD-2-Clause) ([#16](https://github.com/mkhanal/clamcove/pull/16)). RAR 1.5 is not extracted, and ClamCove alerts on it when the option above is on ([#7](https://github.com/mkhanal/clamcove/pull/7)) | Not yet offered |
 | Version output | `ClamAV 1.5.4/...` | `ClamAV 1.5.4/... (ClamCove <version>)`, ClamAV's version first and unchanged ([#13](https://github.com/mkhanal/clamcove/pull/13)) | ClamCove only, never offered |
 | freshclam User-Agent | `ClamAV/1.5.4 (OS: ...)` | Unchanged | None needed |
-
-The RAR rows apply to the libarchive build (`ENABLE_UNRAR_LIBARCHIVE`); the unRAR build behaves as ClamAV does.
 
 ## Release patches
 
 Every release ships its changes to the official ClamAV source as patches, next to the complete source tarball. Each patch is
 the net diff of one change: it contains what the release contains and nothing a later commit removed, so no patch carries code
-that is not in the release. Apply them in file name order to the official `clamav-<version>` source with
-`git apply --binary -p1 <patch>`; the result is exactly the release tree without `.github` (CI and release inputs).
+that is not in the release. A patch records a deleted file without its text, so no patch carries the code of a file the release
+does not contain (the RARLAB unRAR source is deleted this way). Apply the patches in file name order to the official
+`clamav-<version>` source with `apply-patch.sh <patch>`, attached to the release, which removes the deleted files and applies the rest
+with `git apply --binary -p1`; the result is exactly the release tree without `.github` (CI and release inputs).
 Changes that edit the same lines cannot be split and come as one patch whose title names them; the last patch holds the tests,
-test inputs, fuzz targets, RAR parity tooling and README of all the changes. The libarchive RAR build contains no RARLAB unRAR
+test inputs, fuzz targets, RAR parity tooling and README of all the changes. ClamCove contains no RARLAB unRAR
 code. `.github/dist/split-changes.sh` writes the patches and `.github/dist/check-patches.sh` verifies them on every pull request
-and push to a release branch; the ownership of commits by change is `.github/clamcove-changes.txt`.
+and push to a release branch; the ownership of commits by change is `.github/clamcove-changes.txt`. The release workflow fails if the
+source tarball, any patch or any layer of the image holds a RARLAB file (`.github/dist/check-no-rarlab.sh`).
 
 ## Cutting a release
 
@@ -195,13 +197,8 @@ are licensed differently than ClamAV. These include:
 - getopt.c: MIT license
 - Curl: license inspired by MIT/X, but not identical
 - libmspack: LGPL license
-- UnRAR (libclamunrar): a non-free/restricted open source license
-  - Note: The UnRAR license is incompatible with GPLv2 because it contains a
-    clause that prohibits reverse engineering a RAR compression algorithm from
-    the UnRAR decompression code.
-    For this reason, libclamunrar/libclamunrar_iface is not linked at all with
-    libclamav. It is instead loaded at run-time. If it fails to load, ClamAV
-    will continue running without RAR support.
+- libarchive (libclamarchive), reads RAR archives: BSD-2-Clause license
+- rardecode (RAR 2.0 and 2.6 decoder, ported into libarchive): BSD-2-Clause license
 
 See the `COPYING` directory for a copy of the 3rd party project licenses.
 

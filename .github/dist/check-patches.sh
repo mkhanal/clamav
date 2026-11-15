@@ -18,7 +18,7 @@ GIT_INDEX_FILE="$work/index-upstream" git read-tree "$upstream^{tree}"
 GIT_INDEX_FILE="$work/index-upstream" git -c core.autocrlf=false checkout-index -a --prefix="$work/applied/"
 rm -rf "$work/applied/.github"
 for patch in "$work"/patches/*.patch; do
-  (cd "$work/applied" && git apply --binary --whitespace=nowarn -p1 "$patch")
+  (cd "$work/applied" && "$here/apply-patch.sh" "$patch")
   echo "applied $(basename "$patch") ($(wc -c < "$patch" | tr -d ' ') bytes)"
 done
 

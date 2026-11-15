@@ -469,20 +469,16 @@ The following is a complete list of CMake options unique to configuring ClamAV:
 
   _Default: `OFF` for Mac & Windows, `ON` for Linux/Unix_
 
-- `ENABLE_UNRAR`: Build & install libclamunrar (UnRAR) and libclamunrar_iface.
-
-  _Default: `ON`_
-
-- `ENABLE_UNRAR_LIBARCHIVE`: Read RAR archives with the vendored libarchive
-  (`libclamarchive`, BSD-2-Clause) instead of RARLAB's UnRAR. libclamunrar is
-  then neither built nor installed, libclamunrar_iface is built from
-  libarchive with no added runtime dependency, and libclamav links it rather
-  than loading it at run time. Requires `ENABLE_UNRAR`. No RARLAB code is
+- `ENABLE_UNRAR`: Read RAR archives with the vendored libarchive
+  (`libclamarchive`, BSD-2-Clause): build & install libclamunrar_iface, which
+  is built from libarchive with no added runtime dependency and which
+  libclamav links rather than loading at run time. No RARLAB code is
   involved. Archives compressed for RAR 2.0 and later (RAR 2.0, 2.6, 2.9
   (RAR 3.x and 4.x) and 5.0) are read; entries compressed for RAR 1.5 are not
-  extracted and are reported as extraction errors.
+  extracted and are reported as extraction errors. `OFF` builds without RAR
+  support.
 
-  _Default: `OFF`_
+  _Default: `ON`_
 
 - `ENABLE_MAN_PAGES`: Generate man pages.
 

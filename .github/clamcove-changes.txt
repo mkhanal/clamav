@@ -5,8 +5,8 @@
 # regex goes before a wider one; the order column names the change and sorts the series before merging.
 # A commit between the upstream tag and the release tag that matches no line fails the release job.
 07	rar20-decoder	patch	RAR 2.0 and 2.6 decoder for libarchive, ported from rardecode (BSD-2-Clause)	^libclamarchive: (Decode RAR 2\.0|Remove the RAR 2\.0|Read the block header of an empty entry in a solid RAR 2\.0|Clamp the end of a RAR 2\.0)|^unit_tests: Match the damaged RAR 2\.0|^tests: Add archives written by RARLAB RAR 2\.50
-01	libarchive-rar	patch	RAR read through vendored libarchive instead of RARLAB unRAR (ENABLE_UNRAR_LIBARCHIVE), no RARLAB unRAR code	^(libclamarchive|libclamunrar_iface|rar|fuzz|tools/rar-parity): |^unit_tests: (Test RAR|Test a split RAR|Run the RAR5)
-03	pcre-container-check	patch	Container constraint of a logical signature checked before its PCRE subsignatures run	^libclamav: Skip PCRE
+01	libarchive-rar	patch	RAR read through vendored libarchive, no RARLAB unRAR code (RARLAB unRAR source and licence removed)	^(libclamarchive|libclamunrar_iface|rar|fuzz|tools/rar-parity): |^unit_tests: (Test RAR|Test a split RAR|Run the RAR5|Judge the continuation test)
+03	pcre-container-check	patch	Container constraint of a logical signature checked before its PCRE subsignatures run	^libclamav: Skip PCRE|^unit_tests: Credit the PCRE container test
 04	incomplete-rar-alert	patch	Opt-in alert for RAR archives that could not be fully extracted and scanned	[Ii]ncomplete[- ]RAR|^libclamav: Add an opt-in alert for a RAR archive
 99	ci-and-tests	none	CI workflows and release inputs under .github	^ci: 
 05	clamcove-naming	patch	ClamCove version string and NOTICE	ClamCove|^(version|notice|readme): |^Version as |^unit_tests: Pass CLAMCOVE_VERSION

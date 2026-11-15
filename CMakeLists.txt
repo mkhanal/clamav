@@ -27,7 +27,7 @@ include(Version)
 
 set(PACKAGE_NAME      "${PROJECT_NAME}")
 set(PACKAGE_VERSION   "${PROJECT_VERSION}")
-set(CLAMCOVE_RELEASE  "3" CACHE STRING "ClamCove distribution release number appended to the ClamAV version")
+set(CLAMCOVE_RELEASE  "2" CACHE STRING "ClamCove distribution release number appended to the ClamAV version")
 set(CLAMCOVE_VERSION  "${PROJECT_VERSION}${VERSION_SUFFIX}.${CLAMCOVE_RELEASE}")
 set(PACKAGE_STRING    "${PROJECT_NAME} ${PROJECT_VERSION}${VERSION_SUFFIX}")
 set(PACKAGE_BUGREPORT "https://github.com/Cisco-Talos/clamav/issues")
@@ -162,24 +162,17 @@ if(ENABLE_FUZZ)
     endif()
 endif()
 
-if(ENABLE_STATIC_LIB AND NOT ENABLE_SHARED_LIB AND ENABLE_UNRAR)
-    # When building everything static, link in libunrar.
+if(ENABLE_UNRAR)
+    # libclamav links the RAR backend instead of loading it at run time: a
+    # missing backend then stops the program from starting rather than
+    # silently disabling RAR scanning.
     set(UNRAR_LINKED 1)
 endif()
 
-if(ENABLE_UNRAR AND ENABLE_UNRAR_LIBARCHIVE)
-    # The libarchive backend carries no RARLAB code, so libclamav links it
-    # instead of loading it at run time: a missing backend then stops the
-    # program from starting rather than silently disabling RAR scanning.
-    set(UNRAR_LINKED 1)
-endif()
-
-if(NOT ENABLE_UNRAR)
-    set(UNRAR_BACKEND_NAME "none")
-elseif(ENABLE_UNRAR_LIBARCHIVE)
+if(ENABLE_UNRAR)
     set(UNRAR_BACKEND_NAME "libarchive (vendored)")
 else()
-    set(UNRAR_BACKEND_NAME "RARLAB unRAR")
+    set(UNRAR_BACKEND_NAME "none")
 endif()
 
 if(ENABLE_LIBCLAMAV_ONLY AND (ENABLE_APP OR ENABLE_EXAMPLES))
@@ -1052,12 +1045,8 @@ endif()
 #
 
 # Build targets for libraries.
-if(ENABLE_UNRAR AND NOT ENABLE_UNRAR_LIBARCHIVE)
-    # Only build libclamunrar if enabled.
-    # We still define the libclamunrar_iface's interface regardless,
-    # so that libclamav will have unrar_iface.h in the include path.
-    add_subdirectory( libclamunrar )
-endif()
+# libclamunrar_iface always defines its interface, so that libclamav has
+# unrar_iface.h in the include path; the RAR backend is built only if enabled.
 add_subdirectory( libclamunrar_iface )
 
 if(NOT ENABLE_EXTERNAL_MSPACK)

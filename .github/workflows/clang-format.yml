@@ -66,6 +66,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          fetch-tags: true
       - name: Install clang-format 16
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-format-16
       - name: Check the lines this change touches
@@ -75,10 +76,12 @@ jobs:
         run: |
           if [ -n "$BASE_REF" ]; then
             base=$(git merge-base HEAD "origin/$BASE_REF")
-          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
             base=$BEFORE
           else
-            echo "skipped: no base to compare against"; exit 0
+            version=$(sed -n '/^project( *ClamAV/,/)/ s/.*VERSION *"\([0-9][0-9.]*\)".*/\1/p' CMakeLists.txt | head -1)
+            base=$(git merge-base HEAD "clamav-$version^{commit}")
+            echo "the commit before this push is not in the repository (a force push, or a new branch): comparing with clamav-$version"
           fi
           # common/optparser.c: its option table follows `clang-format on`, so one added entry makes the check want the whole table reflowed
           out=$(git clang-format-16 --diff --extensions c,h,cpp,cc "$base" -- clamd clamdscan clamonacc clamscan common ':(exclude)common/optparser.c' || true)

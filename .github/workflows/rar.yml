@@ -35,7 +35,7 @@ jobs:
       - name: Configure
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DENABLE_UNRAR_LIBARCHIVE=ON -DENABLE_EXAMPLES=OFF -DENABLE_MAN_PAGES=OFF
+          -DENABLE_EXAMPLES=OFF -DENABLE_MAN_PAGES=OFF
           -DCMAKE_INSTALL_PREFIX="$PWD/prefix"
           -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize=alignment -fno-omit-frame-pointer"
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize=alignment -fno-omit-frame-pointer"
@@ -102,26 +102,29 @@ jobs:
           sudo apt-get install -y --no-install-recommends bison flex check libbz2-dev libcurl4-openssl-dev \
             libjson-c-dev libmilter-dev libncurses-dev libpcre2-dev libssl-dev libxml2-dev pkg-config python3-pytest zlib1g-dev
 
-      - name: Build and install with RARLAB unRAR
+      - name: Build and install the official ClamAV release, the reference
         if: steps.inputs.outputs.present == 'true'
         run: |
-          cmake -S . -B build-rarlab -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/clamav-rarlab \
+          version=$(sed -n '/^project( *ClamAV/,/)/ s/.*VERSION *"\([0-9][0-9.]*\)".*/\1/p' CMakeLists.txt | head -1)
+          .github/dist/fetch-official-source.sh "$version" "$RUNNER_TEMP/official"
+          tar -xzf "$RUNNER_TEMP/official/clamav-$version.tar.gz" -C "$RUNNER_TEMP"
+          cmake -S "$RUNNER_TEMP/clamav-$version" -B "$RUNNER_TEMP/build-official" -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/opt/clamav-official \
             -DENABLE_EXAMPLES=OFF -DENABLE_MAN_PAGES=OFF -DENABLE_TESTS=OFF -DENABLE_CLAMONACC=OFF -DENABLE_MILTER=OFF
-          cmake --build build-rarlab --parallel
-          sudo cmake --install build-rarlab
+          cmake --build "$RUNNER_TEMP/build-official" --parallel
+          sudo cmake --install "$RUNNER_TEMP/build-official"
 
       - name: Build and install with libarchive
         if: steps.inputs.outputs.present == 'true'
         run: |
           cmake -S . -B build-libarchive -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/clamav-libarchive \
-            -DENABLE_UNRAR_LIBARCHIVE=ON \
             -DENABLE_EXAMPLES=OFF -DENABLE_MAN_PAGES=OFF -DENABLE_TESTS=OFF -DENABLE_CLAMONACC=OFF -DENABLE_MILTER=OFF
           cmake --build build-libarchive --parallel
           sudo cmake --install build-libarchive
 
       - name: Compare without the incomplete-RAR alert
         if: steps.inputs.outputs.present == 'true'
-        run: python3 tools/rar-parity/compare.py --a prefix:/opt/clamav-rarlab --b prefix:/opt/clamav-libarchive --json parity.json
+        run: python3 tools/rar-parity/compare.py --a prefix:/opt/clamav-official --b prefix:/opt/clamav-libarchive --json parity.json
 
       - name: Compare with the incomplete-RAR alert
         if: ${{ !cancelled() && steps.inputs.outputs.present == 'true' }}
@@ -131,8 +134,8 @@ jobs:
             echo "### skipped: --alert-incomplete-rar not present" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          python3 tools/rar-parity/compare.py --a prefix:/opt/clamav-rarlab --b prefix:/opt/clamav-libarchive \
-            --extra-options=--alert-incomplete-rar=yes --json parity-alert.json
+          python3 tools/rar-parity/compare.py --a prefix:/opt/clamav-official --b prefix:/opt/clamav-libarchive \
+            --b-extra-options=--alert-incomplete-rar=yes --json parity-alert.json
 
       - name: Upload parity results
         if: always() && steps.inputs.outputs.present == 'true'
@@ -154,4 +157,7 @@ jobs:
       - name: Smoke test
         run: |
           docker run --rm clamcove:ci clamscan --version
-          docker run --rm clamcove:ci sh -c 'ldd /usr/lib/libclamunrar_iface.so* | grep -c -i -e rarlab -e unrar_dll || true; ls /usr/lib/libclamunrar.so* 2>/dev/null && exit 1 || true'
+          docker run --rm clamcove:ci sh -c 'test -z "$(find / -xdev -name "libclamunrar.so*")" && test -n "$(find / -xdev -name "libclamunrar_iface.so*")"'
+
+      - name: No RARLAB file in any layer of the image
+        run: .github/dist/check-no-rarlab.sh image clamcove:ci

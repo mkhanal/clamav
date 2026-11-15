@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Scan the RAR parity fixtures with two ClamAV builds and compare the verdicts.
 
-  compare.py --a docker:clamav-rar-unrar --b docker:clamav-rar-libarchive
-  compare.py --a prefix:/opt/clamav-unrar --b prefix:/opt/clamav-libarchive
-  compare.py --a docker:clamav-rar-unrar --report-only      # baseline, manifest only
+  compare.py --a docker:clamav-rar-official --b docker:clamav-rar-libarchive
+  compare.py --a prefix:/opt/clamav-official --b prefix:/opt/clamav-libarchive
+  compare.py --a docker:clamav-rar-official --report-only      # baseline, manifest only
 
-A is the reference build (unRAR), B the build under test (libarchive backend).
+A is the reference build (official ClamAV), B the build under test (ClamCove).
 Exit status is non-zero when, for any row, B
   - detects less than A (a detection in A that B lacks),
   - reports clean where A alerted or errored, or
@@ -23,6 +23,9 @@ Expected outcomes (manifest.json, field expected.kind):
              because no build can tell it from an empty archive or scans it completely
   A row with backend_gap names an entry type the libarchive backend does not decode yet:
   B is exempt from the detection checks and must not report it clean with the alert on.
+With different options for A and B (--a-extra-options, --b-extra-options), as when only B has
+--alert-incomplete-rar, B must still detect everything A detects, every result B has and A lacks must be
+Heuristics.Incomplete.RAR, and a clean B beside an A that errored is not a failure.
 Only B is held to the manifest; A, the reference, is reported but never fails the run.
   clean      archive holds nothing scannable; no RarParity detection expected
 """
@@ -43,6 +46,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 ENCRYPTED = "Heuristics.Encrypted.RAR"
 INCOMPLETE_ALERT = "--alert-incomplete-rar=yes"
+INCOMPLETE = "Heuristics.Incomplete.RAR"
 LIMITS = "Heuristics.Limits.Exceeded"
 XOR_KEY = b"bhcftqarohcdiayfohalohkgmoefxrrgfnczssgybajvkzjaahpfrlqsratkhhfvpxytculmwgmtyzujlbjlgrhtwxhzpjazlibbwepffyjyfkjwzyofgpopoueurinpdujkphxwhnaxfkaiwrpzdqsnwughtejr"
 BASE_OPTIONS = ["-z", "--alert-encrypted-archive=yes", "--alert-exceeds-max=yes", "--no-summary"]
@@ -177,17 +181,21 @@ def build_rows(manifest: dict, only: str | None, runtime: bool) -> list[dict]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--a", required=True, help="reference build (unRAR): docker:IMAGE or prefix:PATH")
+    ap.add_argument("--a", required=True, help="reference build (official ClamAV): docker:IMAGE or prefix:PATH")
     ap.add_argument("--b", help="build under test (libarchive): docker:IMAGE or prefix:PATH")
     ap.add_argument("--manifest", default=os.path.join(HERE, "manifest.json"))
     ap.add_argument("--only", help="regex over row ids")
     ap.add_argument("--no-runtime", action="store_true", help="skip the large archives generated at scan time")
     ap.add_argument("--report-only", action="store_true", help="print the table, exit 0 (baseline recording)")
     ap.add_argument("--json", help="write per-row results here")
-    ap.add_argument("--extra-options", default="", help='extra clamscan flags for both builds, one shell-quoted string, e.g. --extra-options="--alert-incomplete-rar=yes"')
+    ap.add_argument("--extra-options", default="", help="extra clamscan flags for both builds, one shell-quoted string")
+    ap.add_argument("--a-extra-options", help="extra clamscan flags for A only, replacing --extra-options for A (the official build has no --alert-incomplete-rar)")
+    ap.add_argument("--b-extra-options", help='extra clamscan flags for B only, replacing --extra-options for B, e.g. --b-extra-options="--alert-incomplete-rar=yes"')
     args = ap.parse_args()
-    extra = shlex.split(args.extra_options)
-    enforce_errors = INCOMPLETE_ALERT in extra
+    extra_a = shlex.split(args.extra_options if args.a_extra_options is None else args.a_extra_options)
+    extra_b = shlex.split(args.extra_options if args.b_extra_options is None else args.b_extra_options)
+    enforce_errors = INCOMPLETE_ALERT in extra_b
+    asymmetric = extra_a != extra_b
 
     with open(args.manifest) as f:
         manifest = json.load(f)
@@ -195,8 +203,8 @@ def main() -> None:
     work = tempfile.mkdtemp(prefix="rarparity-fx-")
     try:
         stage(rows, work)
-        ra = run_build(args.a, rows, work, extra)
-        rb = run_build(args.b, rows, work, extra) if args.b else None
+        ra = run_build(args.a, rows, work, extra_a)
+        rb = run_build(args.b, rows, work, extra_b) if args.b else None
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -218,7 +226,11 @@ def main() -> None:
                 lost = sorted(a["found"] - b["found"])
                 if lost:
                     problems.append(f"B detects less than A: {', '.join(lost[:3])}{' ...' if len(lost) > 3 else ''}")
-                if verdict(a) != "clean" and verdict(b) == "clean":
+                if asymmetric:
+                    extra_found = sorted(n for n in b["found"] - a["found"] if n != INCOMPLETE)
+                    if extra_found:
+                        problems.append(f"B reports more than A besides {INCOMPLETE}: {', '.join(extra_found[:3])}")
+                elif verdict(a) != "clean" and verdict(b) == "clean":
                     problems.append("B clean where A alerted or errored")
         else:
             why = meets(r, a, enforce_errors)

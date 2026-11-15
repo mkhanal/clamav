@@ -51,8 +51,7 @@ jobs:
       - name: Build
         if: matrix.language == 'cpp'
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF -DENABLE_EXAMPLES=OFF \
-            -DENABLE_UNRAR_LIBARCHIVE=ON
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF -DENABLE_EXAMPLES=OFF
           cmake --build build --parallel
 
       - name: Perform CodeQL analysis

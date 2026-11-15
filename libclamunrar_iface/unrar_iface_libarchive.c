@@ -1,5 +1,5 @@
 /*
- * libclamunrar_iface backed by libarchive instead of RARLAB unRAR.
+ * libclamunrar_iface backed by libarchive.
  *
  * Copyright (C) 2026 Mridul Khanal. All rights reserved.
  *
@@ -33,12 +33,12 @@
 /*
  * The five unrar_iface functions, implemented with the vendored libarchive.
  *
- * libclamav drives them exactly as it drives the RARLAB implementation in
- * unrar_iface.cpp, so this file reproduces what that implementation returns
- * for every input: the same open, header, extract and skip results, the same
- * metadata (names converted the way unRAR converts them, sizes, CRC, method,
- * flags), the archive comment as unRAR hands it over, and the same handling of
- * volumes, links, encryption and damaged data.
+ * libclamav drives them as it drove the unRAR implementation ClamAV ships, so
+ * this file returns what that implementation returns for every input: the same
+ * open, header, extract and skip results, the same metadata (names converted
+ * the way unRAR converts them, sizes, CRC, method, flags), the archive comment
+ * as unRAR hands it over, and the same handling of volumes, links, encryption
+ * and damaged data.
  */
 
 #if HAVE_CONFIG_H
@@ -82,7 +82,7 @@
 #define O_BINARY 0
 #endif
 
-/* The size of the comment buffer unrar_iface.cpp hands to unRAR. */
+/* The size of the comment buffer unRAR is handed. */
 #define UNRAR_COMMENT_BUFFER_SIZE (64 * 1024)
 
 /* Names reach libclamav through a 1024 byte field, terminator included. */

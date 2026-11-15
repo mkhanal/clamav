@@ -321,7 +321,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--unrar-dir", required=True)
     ap.add_argument("--skip-fetch", action="store_true")
-    ap.add_argument("--validator-image", default="clamav-rar-unrar", help="ClamAV image used to prove which inner files a signature can detect standalone")
+    ap.add_argument("--validator-image", default="clamav-rar-official", help="ClamAV image used to prove which inner files a signature can detect standalone")
     a = ap.parse_args()
     if not a.skip_fetch:
         stage_libarchive()

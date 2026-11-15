@@ -12,7 +12,6 @@ endif()
 # An interface is required because libclamav objects will depend on the
 # interface to put unrar_iface.h in the include path, but we don't want to link
 # with it.
-# libclamunrar_iface will be dynamically loaded at run time, if enabled.
 add_library(clamunrar_iface_iface INTERFACE)
 target_sources(clamunrar_iface_iface
     INTERFACE
@@ -23,7 +22,7 @@ target_include_directories( clamunrar_iface_iface
 
 add_library( ClamAV::libunrar_iface_iface ALIAS clamunrar_iface_iface )
 
-if(ENABLE_UNRAR AND ENABLE_UNRAR_LIBARCHIVE)
+if(ENABLE_UNRAR)
     # Build the vendored libarchive as a static library with no optional
     # dependencies, so the RAR readers add nothing to the runtime.
     # It is built by its own CMake project (ExternalProject) so its options
@@ -119,15 +118,6 @@ if(ENABLE_UNRAR AND ENABLE_UNRAR_LIBARCHIVE)
     set(UNRAR_IFACE_BACKEND_SHARED clamav_libarchive_static)
     set(UNRAR_IFACE_BACKEND_STATIC clamav_libarchive_static)
     set(UNRAR_IFACE_COMPILE_FLAGS  "${WARNCFLAGS}")
-elseif(ENABLE_UNRAR)
-    set(UNRAR_IFACE_SOURCES
-        unrar_iface.cpp
-        unrar_iface.h
-    )
-    set(UNRAR_IFACE_BACKEND_INCLUDE_DIRS $<TARGET_PROPERTY:ClamAV::libunrar,INTERFACE_INCLUDE_DIRECTORIES>)
-    set(UNRAR_IFACE_BACKEND_SHARED ClamAV::libunrar)
-    set(UNRAR_IFACE_BACKEND_STATIC ClamAV::libunrar_static)
-    set(UNRAR_IFACE_COMPILE_FLAGS  "${WARNCXXFLAGS} ${CXX1XCXXFLAGS}")
 endif()
 
 if(ENABLE_UNRAR)
@@ -140,7 +130,6 @@ if(ENABLE_UNRAR)
         set_target_properties( clamunrar_iface PROPERTIES
             VERSION ${LIBCLAMAV_VERSION}
             SOVERSION ${LIBCLAMAV_SOVERSION}
-            CXX_STANDARD 11
         )
 
         target_sources( clamunrar_iface
@@ -195,10 +184,6 @@ if(ENABLE_UNRAR)
     if(ENABLE_STATIC_LIB)
         # The clamunrar_iface static library.
         add_library( clamunrar_iface_static STATIC)
-        set_target_properties( clamunrar_iface_static PROPERTIES
-            CXX_STANDARD 11
-        )
-
         target_sources( clamunrar_iface_static
             PRIVATE
                 ${UNRAR_IFACE_SOURCES}
