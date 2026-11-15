@@ -168,6 +168,16 @@ class Archive:
         edit(header)
         block.body = header.build()
 
+    def set_main_flags(self, flags):
+        """Set the archive flags of the main header (0x04 is solid)."""
+        block = self.blocks[0]
+        _, k = read_vint(block.body, 0)
+        header_flags, k = read_vint(block.body, k)
+        if header_flags & HFL_EXTRA:
+            _, k = read_vint(block.body, k)
+        old, j = read_vint(block.body, k)
+        block.body = block.body[:k] + vint(flags) + block.body[j:]
+
     def build(self):
         return SIGNATURE + b''.join(b.pack() for b in self.blocks)
 

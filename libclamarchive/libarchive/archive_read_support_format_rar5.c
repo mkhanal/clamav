@@ -88,6 +88,11 @@ static const unsigned char rar5_signature_xor[] = {
 };
 static const size_t g_unpack_window_size = 0x20000;
 
+/* The largest window allocated: the largest dictionary RAR5 archives
+ * written by WinRAR for 64-bit systems use. Memory behind it is only
+ * committed as the entry is decoded. */
+#define RAR5_MAX_WINDOW_SIZE ((uint64_t)1 << 30)
+
 /* Bid returned when the RAR5 signature is found at offset 0.  Bidders
  * conventionally return the number of bits they verified, so an exact
  * match of the 8-byte signature bids 64 (like the ar and warc readers
@@ -141,7 +146,9 @@ struct file_header {
 	uint64_t redir_type;
 	uint64_t redir_flags;
 
-	ssize_t solid_window_size; /* Used in file format check. */
+	/* Why the entry cannot be extracted, or NULL: its data is skipped and
+	 * its extraction fails, while the headers after it are still read. */
+	const char* entry_error;
 };
 
 enum EXTRA {
@@ -249,6 +256,7 @@ struct comp_state {
 	int method;                  /* Uncompression algorithm method. */
 	int version;                 /* Uncompression algorithm version. */
 	ssize_t window_size;         /* Size of window_buf. */
+	uint64_t dict_size;          /* Dictionary size the entry declares. */
 	uint8_t* window_buf;         /* Circular buffer used during
 	                                decompression. */
 	uint8_t* filtered_buf;       /* Buffer used when applying filters. */
@@ -1596,9 +1604,8 @@ static void process_head_file_extra(struct archive_entry* e,
 	}
 }
 
-static int file_entry_sanity_checks(struct archive_read* a,
-	size_t block_flags, uint8_t is_dir, uint64_t unpacked_size,
-	size_t packed_size)
+static const char* file_entry_sanity_checks(size_t block_flags,
+	uint8_t is_dir, uint64_t unpacked_size, size_t packed_size)
 {
 	if (is_dir) {
 		const int declares_data_size =
@@ -1606,21 +1613,15 @@ static int file_entry_sanity_checks(struct archive_read* a,
 
 		/* FILE entries for directories still declare HFL_DATA in block flags,
 		   even though attaching data to such blocks doesn't make much sense. */
-		if (declares_data_size) {
-			archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-				"directory entries cannot have any data");
-			return ARCHIVE_FATAL;
-		}
+		if (declares_data_size)
+			return "directory entries cannot have any data";
 	} else {
 		const int declares_hfl_data = (int) ((block_flags & HFL_DATA) != 0);
-		if (!declares_hfl_data) {
-			archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-					"no data found in file/service block");
-			return ARCHIVE_FATAL;
-		}
+		if (!declares_hfl_data)
+			return "no data found in file/service block";
 	}
 
-	return ARCHIVE_OK;
+	return NULL;
 }
 
 static int header_overrun(struct archive_read* a)
@@ -1628,6 +1629,93 @@ static int header_overrun(struct archive_read* a)
 	archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
 	    "File header runs past the end of its block");
 	return ARCHIVE_FATAL;
+}
+
+/*
+ * The smallest window an entry that starts a new stream needs: twice its
+ * unpacked size, so a filter block never exceeds half of it, and no larger
+ * than its dictionary. A dictionary larger than that is never reached by
+ * the entry, so it does not change what the entry decodes to.
+ */
+static uint64_t window_size_for(uint64_t dictionary, uint64_t unpacked_size)
+{
+	uint64_t size = g_unpack_window_size;
+
+	while(size < dictionary && size / 2 < unpacked_size)
+		size <<= 1;
+
+	return size;
+}
+
+/*
+ * Give a solid stream a larger window. What the stream has written so far
+ * stays where it is addressed: the byte at stream position x is at x masked
+ * by the size of the window.
+ */
+static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
+{
+	const uint64_t written = (uint64_t) rar5->cstate.solid_offset;
+	const uint64_t old_size = (uint64_t) rar5->cstate.window_size;
+	const uint64_t keep = rar5_min(written, old_size);
+	uint8_t* window_buf = calloc(1, (size_t) window_size);
+	uint8_t* filtered_buf = calloc(1, (size_t) window_size);
+	uint64_t pos;
+
+	if(window_buf == NULL || filtered_buf == NULL) {
+		free(window_buf);
+		free(filtered_buf);
+		return "Not enough memory for the window of this entry";
+	}
+
+	for(pos = written - keep; pos < written; pos++)
+		window_buf[pos & (window_size - 1)] =
+		    rar5->cstate.window_buf[pos & (old_size - 1)];
+
+	clear_data_ready_stack(rar5);
+	free(rar5->cstate.window_buf);
+	free(rar5->cstate.filtered_buf);
+	rar5->cstate.window_buf = window_buf;
+	rar5->cstate.filtered_buf = filtered_buf;
+	return NULL;
+}
+
+/*
+ * A solid stream shares one window between its entries, so it gets the
+ * dictionary it declares; any other entry gets what it needs. An entry of
+ * a stream that already has a window uses it, and a larger dictionary than
+ * the window has grows it. Returns why the entry cannot be decoded, or
+ * NULL.
+ */
+static const char* select_window(struct rar5 *rar5, uint64_t compression_info,
+    uint64_t unpacked_size)
+{
+	const uint64_t dictionary =
+	    (uint64_t) g_unpack_window_size << ((compression_info >> 10) & 15);
+	uint64_t window_size;
+
+	if(rar5->main.solid || rar5->file.solid)
+		window_size = dictionary;
+	else
+		window_size = window_size_for(dictionary, unpacked_size);
+
+	if(window_size > RAR5_MAX_WINDOW_SIZE)
+		return "Declared dictionary size is not supported";
+
+	if(rar5->main.solid && rar5->cstate.window_buf != NULL) {
+		if(window_size > (uint64_t) rar5->cstate.window_size) {
+			const char* error = grow_window(rar5, window_size);
+
+			if(error != NULL)
+				return error;
+		} else {
+			window_size = (uint64_t) rar5->cstate.window_size;
+		}
+	}
+
+	rar5->cstate.window_size = (ssize_t) window_size;
+	rar5->cstate.dict_size = dictionary;
+	init_window_mask(rar5);
+	return NULL;
 }
 
 static int process_head_file(struct archive_read* a, struct rar5 *rar5,
@@ -1644,15 +1732,15 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	uint64_t host_os = 0;
 	uint64_t name_size = 0;
 	uint64_t unpacked_size = 0;
-	uint64_t window_size;
 	uint32_t mtime = 0, crc = 0;
 	int c_method = 0, c_version = 0;
+	int fields_ok;
 	char name_utf8_buf[MAX_NAME_IN_BYTES];
 	static const uint8_t no_bytes[1] = { 0 };
 	const uint8_t* p = no_bytes;
-	const uint8_t* name = NULL;
+	const uint8_t* name = no_bytes;
+	const char* entry_error = NULL;
 	int64_t left;
-	int sanity_ret;
 
 	enum FILE_FLAGS {
 		DIRECTORY = 0x0001, UTIME = 0x0002, CRC32 = 0x0004,
@@ -1666,6 +1754,10 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 
 	enum COMP_INFO_FLAGS {
 		SOLID = 0x0040,
+	};
+
+	enum COMPRESSION_METHOD {
+		STORE = 0,
 	};
 
 	enum HOST_OS {
@@ -1693,20 +1785,14 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	c.cur = p;
 	c.end = p + left;
 
-	if(block_flags & HFL_EXTRA_DATA) {
-		if(!hdr_var(&c, &extra_size))
-			return header_overrun(a);
-
-		/* The extra area is part of the file header, which
-		 * process_base_block() has already bounded to MAX_HEADER_SIZE,
-		 * so a declared size larger than that cannot be valid. */
-		if(extra_size > MAX_HEADER_SIZE) {
-			archive_set_error(&a->archive,
-			    ARCHIVE_ERRNO_FILE_FORMAT,
-			    "File extra data size is too large");
-			return ARCHIVE_FATAL;
-		}
-	}
+	/*
+	 * The size of the data is the last thing the stream cannot go on
+	 * without: from there on, whatever is wrong with this header is a
+	 * problem of this entry, and the next header is found by the end of
+	 * the block.
+	 */
+	if((block_flags & HFL_EXTRA_DATA) && !hdr_var(&c, &extra_size))
+		return header_overrun(a);
 
 	if(block_flags & HFL_DATA) {
 		if(!hdr_var(&c, &data_size64))
@@ -1725,44 +1811,39 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 		rar5->file.bytes_remaining = 0;
 	}
 
-	if(!hdr_var(&c, &file_flags) || !hdr_var(&c, &unpacked_size) ||
-	    !hdr_var(&c, &file_attr))
-		return header_overrun(a);
+	fields_ok = hdr_var(&c, &file_flags) && hdr_var(&c, &unpacked_size) &&
+	    hdr_var(&c, &file_attr);
+	fields_ok = fields_ok &&
+	    (!(file_flags & UTIME) || hdr_u32(&c, &mtime));
+	fields_ok = fields_ok &&
+	    (!(file_flags & CRC32) || hdr_u32(&c, &crc));
+	fields_ok = fields_ok && hdr_var(&c, &compression_info) &&
+	    hdr_var(&c, &host_os) && hdr_var(&c, &name_size) &&
+	    hdr_bytes(&c, name_size, &name);
 
-	if((file_flags & UTIME) && !hdr_u32(&c, &mtime))
-		return header_overrun(a);
-
-	if((file_flags & CRC32) && !hdr_u32(&c, &crc))
-		return header_overrun(a);
-
-	if(!hdr_var(&c, &compression_info) || !hdr_var(&c, &host_os) ||
-	    !hdr_var(&c, &name_size))
-		return header_overrun(a);
-
-	if(name_size > (MAX_NAME_IN_CHARS - 1)) {
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-				"Filename is too long");
-
-		return ARCHIVE_FATAL;
+	if(!fields_ok) {
+		entry_error = "File header runs past the end of its block";
+		file_flags = unpacked_size = file_attr = 0;
+		compression_info = host_os = name_size = 0;
+		mtime = crc = 0;
 	}
 
-	if(name_size == 0) {
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-				"No filename specified");
-
-		return ARCHIVE_FATAL;
-	}
-
-	if(!hdr_bytes(&c, name_size, &name))
-		return header_overrun(a);
+	/* A name longer than the buffers is cut; the entry is still read. */
+	if(name_size > (MAX_NAME_IN_CHARS - 1))
+		name_size = MAX_NAME_IN_CHARS - 1;
 
 	/* The extra area is the last part of the header; anything between the
 	 * name and it is padding. */
-	if(extra_size > hdr_left(&c))
-		return header_overrun(a);
+	if(entry_error == NULL && (extra_size > MAX_HEADER_SIZE ||
+	    extra_size > hdr_left(&c)))
+		entry_error = "File extra area does not fit in its header";
 
-	extra.cur = c.end - extra_size;
-	extra.end = c.end;
+	if(entry_error == NULL) {
+		extra.cur = c.end - extra_size;
+		extra.end = c.end;
+	} else {
+		extra.cur = extra.end = c.end;
+	}
 
 	if((file_flags & UNKNOWN_UNPACKED_SIZE) && !(file_flags & DIRECTORY)) {
 		/* The data goes on until its last block, as unRAR reads it. */
@@ -1771,101 +1852,33 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 
 	rar5->file.dir = (uint8_t) ((file_flags & DIRECTORY) > 0);
 
-	sanity_ret = file_entry_sanity_checks(a, block_flags, rar5->file.dir,
-		unpacked_size, data_size);
+	if(entry_error == NULL && name_size == 0)
+		entry_error = "No filename specified";
 
-	if (sanity_ret != ARCHIVE_OK) {
-		return sanity_ret;
-	}
+	if(entry_error == NULL)
+		entry_error = file_entry_sanity_checks(block_flags,
+		    rar5->file.dir, unpacked_size, data_size);
 
 	c_method = (int) (compression_info >> 7) & 0x7;
 	c_version = (int) (compression_info & 0x3f);
 
-	/* RAR5 seems to limit the dictionary size to 64MB. */
-	window_size = (rar5->file.dir > 0) ?
-		0 :
-		g_unpack_window_size << ((compression_info >> 10) & 15);
 	rar5->cstate.method = c_method;
 	rar5->cstate.version = c_version + 50;
 	rar5->file.solid = (compression_info & SOLID) > 0;
 
-	/* Archives which declare solid files without initializing the window
-	 * buffer first are invalid, unless previous data was encrypted, in
-	 * which case we may never have had the chance */
-
-	if(rar5->file.solid > 0 && rar5->cstate.data_encrypted == 0 &&
-	    rar5->cstate.window_buf == NULL &&
-	    !(rar5->generic.split_before && !rar5->cstate.switch_multivolume)) {
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-				  "Declared solid file, but no window buffer "
-				  "initialized yet");
-		return ARCHIVE_FATAL;
-	}
-
-	/* Check if window_size is a sane value. Also, if the file is not
-	 * declared as a directory, disallow window_size == 0. */
-	if(window_size > (64 * 1024 * 1024) ||
-	    (rar5->file.dir == 0 && window_size == 0))
-	{
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-		    "Declared dictionary size is not supported");
-		return ARCHIVE_FATAL;
-	}
-
-	if(rar5->file.solid > 0) {
-		/* Re-check if current window size is the same as previous
-		 * window size (for solid files only). */
-		if(rar5->file.solid_window_size > 0 &&
-		    rar5->file.solid_window_size != (ssize_t) window_size)
-		{
-			archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-			    "Window size for this solid file doesn't match "
-			    "the window size used in previous solid file");
-			return ARCHIVE_FATAL;
-		}
-	}
-	else
+	/* An entry that is not part of a stream carries nothing over, and
+	 * a stored entry or a directory has no window of its own. A solid
+	 * entry without a window before it starts a window of its own, as
+	 * unRAR does. */
+	if(!rar5->file.solid)
 		rar5->cstate.data_encrypted = 0; /* Reset for new buffer */
 
-	if(rar5->cstate.window_size < (ssize_t) window_size &&
-	    rar5->cstate.window_buf)
-	{
-		/* The `data_ready` stack contains pointers to the `window_buf` or
-		 * `filtered_buf` buffers.  Since we're about to reallocate the first
-		 * buffer, some of those pointers could become invalid. Therefore, we
-		 * need to dispose of all entries from the stack before attempting the
-		 * realloc. */
-		clear_data_ready_stack(rar5);
+	if(entry_error == NULL && rar5->file.dir == 0 && c_method != STORE &&
+	    !rar5->cstate.switch_multivolume)
+		entry_error = select_window(rar5, compression_info,
+		    unpacked_size);
 
-		/* If window_buf has been allocated before, reallocate it, so
-		 * that its size will match new window_size. */
-
-		uint8_t* new_window_buf =
-			realloc(rar5->cstate.window_buf, (size_t) window_size);
-
-		if(!new_window_buf) {
-			archive_set_error(&a->archive, ARCHIVE_ERRNO_PROGRAMMER,
-				"Not enough memory when trying to realloc the window "
-				"buffer");
-			return ARCHIVE_FATAL;
-		}
-
-		rar5->cstate.window_buf = new_window_buf;
-	}
-
-	/* Values up to 64M should fit into ssize_t on every
-	 * architecture. */
-	rar5->cstate.window_size = (ssize_t) window_size;
-
-	if(rar5->file.solid > 0 && rar5->file.solid_window_size == 0) {
-		/* Solid files have to have the same window_size across
-		   whole archive. Remember the window_size parameter
-		   for first solid file found. */
-		rar5->file.solid_window_size = rar5->cstate.window_size;
-	}
-
-	init_window_mask(rar5);
-
+	rar5->file.entry_error = entry_error;
 	rar5->file.service = 0;
 
 	if(host_os == HOST_WINDOWS) {
@@ -2520,12 +2533,16 @@ static int init_unpack(struct rar5 *rar5) {
 
 	if(rar5->cstate.window_size > 0) {
 		rar5->cstate.window_buf = calloc(1, rar5->cstate.window_size);
-		if(rar5->cstate.window_buf == NULL)
-			return ARCHIVE_FATAL;
 		rar5->cstate.filtered_buf = calloc(1,
 		    rar5->cstate.window_size);
-		if(rar5->cstate.filtered_buf == NULL)
-			return ARCHIVE_FATAL;
+		if(rar5->cstate.window_buf == NULL ||
+		    rar5->cstate.filtered_buf == NULL) {
+			free(rar5->cstate.window_buf);
+			free(rar5->cstate.filtered_buf);
+			rar5->cstate.window_buf = NULL;
+			rar5->cstate.filtered_buf = NULL;
+			return ARCHIVE_FAILED;
+		}
 	}
 
 	clear_data_ready_stack(rar5);
@@ -3089,8 +3106,16 @@ static int copy_string(struct archive_read* a, int len, int dist) {
 	for(i = 0; i < len; i++) {
 		const ssize_t write_idx = (write_ptr + i) & cmask;
 		const ssize_t read_idx = (write_ptr + i - dist) & cmask;
-		rar5->cstate.window_buf[write_idx] =
-		    rar5->cstate.window_buf[read_idx];
+
+		/* The window is smaller than the dictionary: what lies
+		 * beyond it is what unRAR's larger window holds before the
+		 * entry starts, which is zeros. */
+		if(dist > rar5->cstate.window_size &&
+		    (uint64_t)dist <= rar5->cstate.dict_size)
+			rar5->cstate.window_buf[write_idx] = 0;
+		else
+			rar5->cstate.window_buf[write_idx] =
+			    rar5->cstate.window_buf[read_idx];
 	}
 
 	rar5->cstate.write_ptr += len;
@@ -3922,8 +3947,13 @@ static int do_uncompress_file(struct archive_read* a) {
 		/* Don't perform full context reinitialization if we're
 		 * processing a solid archive. */
 		if(!rar5->main.solid || !rar5->cstate.window_buf) {
-			if((ret = init_unpack(rar5)) != ARCHIVE_OK)
+			if((ret = init_unpack(rar5)) != ARCHIVE_OK) {
+				archive_set_error(&a->archive,
+				    ARCHIVE_RAR_ERRNO_UNSUPPORTED,
+				    "Not enough memory for the window of "
+				    "this entry");
 				return ret;
+			}
 		}
 
 		rar5->cstate.initialized = 1;
@@ -4302,6 +4332,14 @@ static int rar5_read_data(struct archive_read *a, const void **buff,
 		return ARCHIVE_FAILED;
 	}
 
+	if(rar5->file.entry_error != NULL) {
+		/* The entry cannot be extracted; the archive can still be
+		 * read on. */
+		archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_UNSUPPORTED,
+		    "%s", rar5->file.entry_error);
+		return ARCHIVE_FAILED;
+	}
+
 	if(rar5->file.dir > 0) {
 		/* Don't process any data if this file entry was declared
 		 * as a directory. This is needed, because entries marked as
@@ -4371,7 +4409,7 @@ static int rar5_read_data_skip(struct archive_read *a) {
 	struct rar5 *rar5 = a->format->data;
 
 	if(rar5->main.solid && (rar5->cstate.data_encrypted == 0) &&
-	    !rar5->info.split_before) {
+	    !rar5->info.split_before && rar5->file.entry_error == NULL) {
 		/* In solid archives, instead of skipping the data, we need to
 		 * extract it, and dispose the result. The side effect of this
 		 * operation will be setting up the initial window buffer state
