@@ -899,3 +899,19 @@ class TC(testcase.TestCase):
         output = self.scan(testfile, '--alert-incomplete-rar=yes', memory_limit_kb=1000000)
         assert output.ec == 1  # virus
         self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
+
+    def test_rar5_entry_without_a_name_does_not_break_its_solid_stream(self):
+        self.step_name('Test the entries after a nameless entry of a solid RAR5 archive are scanned')
+
+        # marker.txt is coded against big.txt before it, so it is found only
+        # if big.txt is decoded as part of the stream, though big.txt itself
+        # cannot be extracted without a name. unRAR extracts marker.txt.
+        archive = self.solid_skip_archive(lambda h: setattr(h, 'name', b''))
+        testfile = self.write_rar5('solid-no-name.rar', archive)
+
+        output = self.scan(testfile, '--alert-incomplete-rar=yes')
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
+
+        output = self.scan(testfile, '--alert-incomplete-rar=yes --allmatch')
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name), '{}: Heuristics.Incomplete.RAR FOUND'.format(testfile.name)])
