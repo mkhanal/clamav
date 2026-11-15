@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Scan the RAR parity fixtures with two ClamAV builds and compare the verdicts.
 
-  compare.py --a docker:clamav-rar-unrar --b docker:clamav-rar-libarchive
-  compare.py --a prefix:/opt/clamav-unrar --b prefix:/opt/clamav-libarchive
-  compare.py --a docker:clamav-rar-unrar --report-only      # baseline, manifest only
+  compare.py --a docker:clamav-rar-official --b docker:clamav-rar-libarchive
+  compare.py --a prefix:/opt/clamav-official --b prefix:/opt/clamav-libarchive
+  compare.py --a docker:clamav-rar-official --report-only      # baseline, manifest only
 
-A is the reference build (unRAR), B the build under test (libarchive backend).
+A is the reference build (official ClamAV), B the build under test (ClamCove).
 Exit status is non-zero when, for any row, B
   - detects less than A (a detection in A that B lacks),
   - reports clean where A alerted or errored, or
@@ -177,7 +177,7 @@ def build_rows(manifest: dict, only: str | None, runtime: bool) -> list[dict]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--a", required=True, help="reference build (unRAR): docker:IMAGE or prefix:PATH")
+    ap.add_argument("--a", required=True, help="reference build (official ClamAV): docker:IMAGE or prefix:PATH")
     ap.add_argument("--b", help="build under test (libarchive): docker:IMAGE or prefix:PATH")
     ap.add_argument("--manifest", default=os.path.join(HERE, "manifest.json"))
     ap.add_argument("--only", help="regex over row ids")
