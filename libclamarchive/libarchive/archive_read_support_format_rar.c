@@ -2954,7 +2954,6 @@ expand20(struct archive_read *a, int64_t *end)
 {
   struct rar *rar = a->format->data;
   int64_t entry_end = rar->solid_base + rar->unp_size;
-  int64_t before = rar->lzss.position;
   int r;
 
   if (*end > entry_end)
@@ -2964,9 +2963,6 @@ expand20(struct archive_read *a, int64_t *end)
   switch (r)
   {
   case RAR20_OK:
-    if ((rar->main_flags & MHD_SOLID) && before < entry_end &&
-        rar->lzss.position >= entry_end)
-      rar20_decoder_finish_entry(rar->dec20, rar20_next_byte, a);
     return (ARCHIVE_OK);
   case RAR20_ERR_OUT_OF_DATA:
     archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
