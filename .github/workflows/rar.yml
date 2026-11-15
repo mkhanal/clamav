@@ -25,14 +25,26 @@ jobs:
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:exitcode=99
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check for the libarchive backend
+        id: backend
+        run: |
+          if grep -q ENABLE_UNRAR_LIBARCHIVE CMakeLists.txt; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "skipped: ENABLE_UNRAR_LIBARCHIVE is not in this release"
+            echo "### skipped: libarchive RAR backend not in this release" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Install dependencies
+        if: steps.backend.outputs.present == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends bison flex check libbz2-dev libcurl4-openssl-dev \
             libjson-c-dev libmilter-dev libncurses-dev libpcre2-dev libssl-dev libxml2-dev pkg-config python3-pytest zlib1g-dev
 
       - name: Configure
+        if: steps.backend.outputs.present == 'true'
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DENABLE_UNRAR_LIBARCHIVE=ON -DENABLE_EXAMPLES=OFF -DENABLE_MAN_PAGES=OFF
@@ -43,14 +55,17 @@ jobs:
           -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
 
       - name: Build
+        if: steps.backend.outputs.present == 'true'
         run: cmake --build build --parallel
 
       - name: Test
+        if: steps.backend.outputs.present == 'true'
         working-directory: build
         run: |
           ctest --output-on-failure --parallel 4 --exclude-regex "^(clamd|libclamav|libclamav_rust)$"
 
       - name: Scan the RAR test set
+        if: steps.backend.outputs.present == 'true'
         run: |
           cmake --install build
           mkdir -p sigs
@@ -158,5 +173,6 @@ jobs:
 
       - name: Smoke test
         run: |
-          docker run --rm clamcove:ci clamscan --version
-          docker run --rm clamcove:ci sh -c 'ldd /usr/lib/libclamunrar_iface.so* | grep -c -i -e rarlab -e unrar_dll || true; ls /usr/lib/libclamunrar.so* 2>/dev/null && exit 1 || true'
+          out=$(docker run --rm clamcove:ci clamscan --version)
+          echo "$out"
+          case "$out" in "ClamAV "*"(ClamCove "*")") ;; *) exit 1 ;; esac

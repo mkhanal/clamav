@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY . /src
 RUN cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
     -DCMAKE_INSTALL_SYSCONFDIR=/etc/clamav -DDATABASE_DIRECTORY=/var/lib/clamav \
-    -DENABLE_UNRAR_LIBARCHIVE=ON -DENABLE_TESTS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_MAN_PAGES=OFF \
+    -DENABLE_TESTS=OFF -DENABLE_EXAMPLES=OFF -DENABLE_MAN_PAGES=OFF \
     -DENABLE_MILTER=OFF -DENABLE_CLAMONACC=OFF -DENABLE_SYSTEMD=OFF \
  && cmake --build /build --parallel "$(nproc)" && DESTDIR=/out cmake --install /build
 
@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=build /out/ /
 RUN ldconfig
 LABEL org.opencontainers.image.title="ClamCove" \
-      org.opencontainers.image.description="ClamAV with RAR read through libarchive; no RARLAB unRAR code. Not affiliated with or endorsed by Cisco or the ClamAV project." \
+      org.opencontainers.image.description="ClamAV with the ClamCove changes. Not affiliated with or endorsed by Cisco or the ClamAV project." \
       org.opencontainers.image.licenses="GPL-2.0-only" \
       org.opencontainers.image.source="https://github.com/mkhanal/clamcove"
 CMD ["clamscan", "--version"]
