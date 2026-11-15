@@ -404,6 +404,11 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
                 cli_dbgmsg("RAR: Extracting file: %s to %s\n", metadata.filename, extract_fullpath);
 
                 unrar_ret = cli_unrar_extract_file(hArchive, extract_fullpath, NULL);
+                if (unrar_ret == UNRAR_EDATA) {
+                    /* Damaged data: what could be decoded was written and is scanned. */
+                    cli_dbgmsg("RAR: Damaged data in file: %s\n", metadata.filename);
+                    unrar_ret = UNRAR_OK;
+                }
                 if (unrar_ret != UNRAR_OK) {
                     /*
                      * Some other error extracting the file
