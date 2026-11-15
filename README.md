@@ -42,12 +42,15 @@ change it makes accepted into ClamAV, so that it shrinks back to ClamAV.
 
 Every release ships its changes to the official ClamAV source as patches, next to the complete source tarball. Each patch is
 the net diff of one change: it contains what the release contains and nothing a later commit removed, so no patch carries code
-that is not in the release. Apply them in file name order to the official `clamav-<version>` source with
-`git apply --binary -p1 <patch>`; the result is exactly the release tree without `.github` (CI and release inputs).
+that is not in the release. A patch records a deleted file without its text, so no patch carries the code of a file the release
+does not contain (the RARLAB unRAR source is deleted this way). Apply the patches in file name order to the official
+`clamav-<version>` source with `apply-patch.sh <patch>`, attached to the release, which removes the deleted files and applies the rest
+with `git apply --binary -p1`; the result is exactly the release tree without `.github` (CI and release inputs).
 Changes that edit the same lines cannot be split and come as one patch whose title names them; the last patch holds the tests,
 test inputs, fuzz targets, RAR parity tooling and README of all the changes. ClamCove contains no RARLAB unRAR
 code. `.github/dist/split-changes.sh` writes the patches and `.github/dist/check-patches.sh` verifies them on every pull request
-and push to a release branch; the ownership of commits by change is `.github/clamcove-changes.txt`.
+and push to a release branch; the ownership of commits by change is `.github/clamcove-changes.txt`. The release workflow fails if the
+source tarball, any patch or any layer of the image holds a RARLAB file (`.github/dist/check-no-rarlab.sh`).
 
 ## Cutting a release
 
