@@ -1177,8 +1177,10 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     size_t size;
     la_int64_t offset;
     uint64_t remaining;
-    uint64_t output_limit = UINT64_MAX;
-    uint64_t written      = 0;
+    uint64_t output_limit  = UINT64_MAX;
+    uint64_t discarded     = 0;
+    uint64_t discard_limit = UINT64_MAX;
+    uint64_t written       = 0;
     int r;
 
     if (NULL == h || NULL == destPath) {
@@ -1224,9 +1226,18 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
         output_limit = h->skip_bytes_left;
     }
 
+    /* Data past the declared size is decoded and dropped, so that the checksum at the end of the entry is still checked, within what is left of the scan size. */
+    if (h->skip_bytes_limited) {
+        discard_limit = h->skip_bytes_left;
+    }
+
     for (;;) {
         r = archive_read_data_block(h->archive, &buf, &size, &offset);
         if (r == ARCHIVE_EOF) {
+            if (!info.unpacked_size_unknown && remaining > 0) {
+                unrar_dbgmsg("unrar_extract_file: The data ended before the declared size.\n");
+                status = UNRAR_EDATA;
+            }
             break;
         }
         if (r < ARCHIVE_WARN) {
@@ -1242,6 +1253,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
             break;
         }
         if ((uint64_t)size > remaining) {
+            discarded += size - remaining;
             size = (size_t)remaining;
         }
         remaining -= size;
@@ -1261,12 +1273,10 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
                 break;
             }
         }
-        if (info.unpacked_size_unknown) {
-            if (written > output_limit || skip_deadline_passed(h)) {
-                unrar_dbgmsg("unrar_extract_file: Output of an entry of unknown size reached the scan limits.\n");
-                status = UNRAR_ELIMIT;
-                break;
-            }
+        if (written > output_limit || discarded > discard_limit || skip_deadline_passed(h)) {
+            unrar_dbgmsg("unrar_extract_file: Output of an entry reached the scan limits.\n");
+            status = UNRAR_ELIMIT;
+            break;
         }
     }
     close(fd);

@@ -261,6 +261,10 @@ struct comp_state {
 	   or just a part of it. */
 	uint8_t block_parsing_finished : 1;
 
+	/* Flag set while the block being unpacked was merged from pieces
+	   in several volumes, which have already been consumed. */
+	uint8_t block_merged : 1;
+
 	/* Flag used to indicate that a previous file using this buffer was
 	   encrypted, meaning no data in the buffer can be trusted */
 	uint8_t data_encrypted : 1;
@@ -1908,8 +1912,15 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	c_method = (int) (compression_info >> 7) & 0x7;
 	c_version = (int) (compression_info & 0x3f);
 
-	rar5->cstate.method = c_method;
-	rar5->cstate.version = c_version + 50;
+	/* A continuation piece carries on the entry the first header
+	 * declared; its own method and sizes decide nothing. */
+	if(rar5->cstate.switch_multivolume) {
+		c_method = rar5->cstate.method;
+		c_version = rar5->cstate.version - 50;
+	} else {
+		rar5->cstate.method = c_method;
+		rar5->cstate.version = c_version + 50;
+	}
 	rar5->file.solid = (compression_info & SOLID) > 0;
 
 	/* An entry that is not part of a stream carries nothing over, and
@@ -1991,8 +2002,17 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	if(left > 0 && ARCHIVE_OK != consume(a, left))
 		return ARCHIVE_EOF;
 
-	rar5->file.unpacked_size = (ssize_t) unpacked_size;
-	rar5->file.unknown_size = (file_flags & UNKNOWN_UNPACKED_SIZE) != 0;
+	if(rar5->cstate.switch_multivolume) {
+		unpacked_size = (uint64_t) rar5->file.unpacked_size;
+		if(rar5->file.unknown_size)
+			file_flags |= UNKNOWN_UNPACKED_SIZE;
+		else
+			file_flags &= ~((uint64_t) UNKNOWN_UNPACKED_SIZE);
+	} else {
+		rar5->file.unpacked_size = (ssize_t) unpacked_size;
+		rar5->file.unknown_size =
+		    (file_flags & UNKNOWN_UNPACKED_SIZE) != 0;
+	}
 	if((file_flags & UNKNOWN_UNPACKED_SIZE) == 0 &&
 	    rar5->file.redir_type == REDIR_TYPE_NONE)
 		archive_entry_set_size(entry, unpacked_size);
@@ -2010,6 +2030,7 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 		/* Do not reinitialize unpacking state if we're switching
 		 * archives. */
 		rar5->cstate.block_parsing_finished = 1;
+		rar5->cstate.block_merged = 0;
 		rar5->cstate.all_filters_applied = 1;
 		rar5->cstate.initialized = 0;
 		rar5->cstate.decode_error = 0;
@@ -3681,8 +3702,11 @@ static int process_block(struct archive_read* a) {
 
 	/* If we don't have any data to be processed, this most probably means
 	 * we need to switch to the next volume. */
-	if(rar5->main.volume && rar5->file.bytes_remaining == 0) {
-		/* Capture 'split after' before advancing: advance_multivolume()
+	if(rar5->main.volume && rar5->file.bytes_remaining == 0 &&
+	    rar5->cstate.block_parsing_finished) {
+		/* A block paused part way, such as a merged one, has all its
+		 * data in memory; the next volume holds nothing of it.
+		 * Capture 'split after' before advancing: advance_multivolume()
 		 * parses following headers and overwrites this flag. */
 		int split_after = rar5->generic.split_after > 0;
 		ret = advance_multivolume(a);
@@ -3765,6 +3789,7 @@ static int process_block(struct archive_read* a) {
 			}
 
 			cur_block_size = block_size;
+			rar5->cstate.block_merged = 1;
 
 			/* Current stream pointer should be now directly
 			 * *after* the block that spanned through multiple
@@ -3773,6 +3798,7 @@ static int process_block(struct archive_read* a) {
 			 * stored in multiple archives files). */
 		} else {
 			rar5->cstate.switch_multivolume = 0;
+			rar5->cstate.block_merged = 0;
 
 			/* Read the whole block size into memory. This can take
 			 * up to  8 megabytes of memory in theoretical cases.
@@ -3817,6 +3843,7 @@ static int process_block(struct archive_read* a) {
 
 	if(rar5->cstate.block_parsing_finished &&
 	    rar5->cstate.switch_multivolume == 0 &&
+	    rar5->cstate.block_merged == 0 &&
 	    rar5->cstate.cur_block_size > 0)
 	{
 		/* If we're processing a normal block, consume the whole
@@ -3832,6 +3859,9 @@ static int process_block(struct archive_read* a) {
 		 * the proper count of bytes instead. */
 		rar5->cstate.switch_multivolume = 0;
 	}
+
+	if(rar5->cstate.block_parsing_finished)
+		rar5->cstate.block_merged = 0;
 
 	return ARCHIVE_OK;
 }
