@@ -731,6 +731,8 @@ class TC(testcase.TestCase):
             ('empty-target', symlink + rar5_craft.vint(0) + rar5_craft.vint(0)),
             ('target-beyond-record', symlink + rar5_craft.vint(0) + rar5_craft.vint(40) + b'abc'),
             ('target-too-long', symlink + rar5_craft.vint(0) + rar5_craft.vint(5000) + b'a' * 5000),
+            ('without-target', symlink + rar5_craft.vint(0)),
+            ('type-only', symlink),
         ):
             with self.subTest(record=name):
                 archive = rar5_craft.Archive((TC.path_rar / 'rar5-compressed-checked.rar').read_bytes())
@@ -739,3 +741,37 @@ class TC(testcase.TestCase):
                 archive.files()[0].body = header.build()
 
                 self.assert_entry_found(self.write_rar5('redirect-' + name + '.rar', archive), COMPRESSED_ENTRY)
+
+    def assert_both_entries_found(self, name, archive, complete):
+        testfile = self.write_rar5(name, archive)
+        for entry in (COMPRESSED_ENTRY, STORED_ENTRY):
+            self.assert_entry_found(testfile, entry)
+
+        if complete:
+            output = self.scan(testfile, '--alert-incomplete-rar=yes')
+            assert 'Heuristics.Incomplete.RAR' not in output.out
+
+    def test_rar5_entry_data_starts_at_the_end_of_its_header(self):
+        self.step_name('Test the data of a RAR5 entry and the headers after it are read from the end of its header')
+
+        # The data follows the header block, wherever the fields in it end.
+        # unRAR reads both entries of each archive; so does this backend. A
+        # record that does not hold what its kind needs is left out of the
+        # entry by this backend, while unRAR reads the bytes after it: the
+        # archive is then not reported as complete by unRAR, but is by this
+        # backend only for the records it understood.
+        zeros = bytes(16)
+        for name, complete, edit in (
+            ('padding-after-name', True, lambda h: setattr(h, 'padding', zeros)),
+            ('padding-after-extra', True, lambda h: setattr(h, 'trailer', zeros)),
+            ('padding-around-extra', True, lambda h: (setattr(h, 'padding', zeros), setattr(h, 'trailer', zeros))),
+            ('hash-record-too-short', False, lambda h: h.set_records([(2, rar5_craft.vint(0) + bytes(10))] + h.records())),
+            ('time-record-too-short', False, lambda h: h.set_records([(3, rar5_craft.vint(0x0b))] + h.records())),
+            ('record-longer-than-area', False, lambda h: setattr(h, 'extra', h.extra + rar5_craft.vint(50) + rar5_craft.vint(7))),
+        ):
+            with self.subTest(header=name):
+                archive = rar5_craft.Archive.join(
+                    (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
+                    (TC.path_rar / 'rar5-stored-checked.rar').read_bytes())
+                archive.edit_file(0, edit)
+                self.assert_both_entries_found('header-' + name + '.rar', archive, complete)
