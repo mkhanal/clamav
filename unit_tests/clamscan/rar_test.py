@@ -278,6 +278,29 @@ class TC(testcase.TestCase):
         assert output.ec == 1  # virus
         self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(damaged)])
 
+    def test_rar5_entry_with_damaged_tables_yields_what_was_decoded(self):
+        self.step_name('Test a RAR5 entry that stops at bad Huffman tables yields what was decoded before them')
+
+        # Libarchive's rar5-bad-tables.rar declares 64 bytes and stops after 34. It is
+        # extracted by unRAR the same way.
+        path_db = TC.path_tmp / 'rar5-bad-tables.hsb'
+        path_db.write_text('eb142b0cae0baa72a767ebc0823d1be94e14c5bfc52d8e417fc4302fceb6240c:34:RAR_ENTRY\n')
+
+        testfile = TC.path_rar / 'rar5-bad-tables.rar'
+        output = self.scan(testfile, path_db=path_db)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_ENTRY.UNOFFICIAL FOUND'.format(testfile)])
+
+    def test_rar5_data_decoded_before_damage_is_extracted(self):
+        self.step_name('Test a RAR5 entry with damaged data yields what was decoded before the damage')
+
+        # Byte 77 is in the compressed data of the only entry: unRAR writes the first 4727 bytes before the damage stops it, and so does this backend.
+        for offset, name, (size, sha256) in (
+            (77, 'data', (4727, '627951f5d4a5f0a3e6219fbbf6ab91b6c2ebfae079a6daa1aa896c6e9a0eadcf')),
+        ):
+            with self.subTest(byte=name):
+                self.scan_damaged_copy('rar5-compressed-checked.rar', offset, size, sha256, 'rar5-compressed-checked.rar-' + name)
+
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
 

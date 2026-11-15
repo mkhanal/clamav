@@ -28,6 +28,12 @@ The last two rows were written by a `rar` binary (RAR 2.9 archives: Unix host,
 real timestamps; RAR5: no other writer exists), but their exact commands were not
 recorded.
 
+## Taken from libarchive
+
+| Fixture | Covers |
+|---|---|
+| `rar5-bad-tables.rar` | libarchive's `test_read_format_rar5_bad_tables.rar` (BSD-2-Clause, see `libclamarchive/COPYING`): a RAR5 entry that stops at Huffman tables that cannot be built; unRAR extracts the 34 bytes decoded before them |
+
 ## Crafted
 
 These were assembled byte by byte by scripts written for this project (RAR 2.9

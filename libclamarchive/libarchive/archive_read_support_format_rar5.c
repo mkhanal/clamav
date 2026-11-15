@@ -239,6 +239,10 @@ struct comp_state {
 	   encrypted, meaning no data in the buffer can be trusted */
 	uint8_t data_encrypted : 1;
 
+	/* Error found in damaged data after the bytes decoded before it were
+	   handed over; returned by the next call. */
+	int decode_error;
+
 	signed int notused : 3;
 
 	int flags;                   /* Uncompression flags. */
@@ -2106,6 +2110,7 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 		rar5->cstate.block_parsing_finished = 1;
 		rar5->cstate.all_filters_applied = 1;
 		rar5->cstate.initialized = 0;
+		rar5->cstate.decode_error = 0;
 		memset(&rar5->last_block_hdr, 0, sizeof(rar5->last_block_hdr));
 	}
 
@@ -2737,7 +2742,8 @@ static void update_crc(struct rar5 *rar5, const uint8_t* p, size_t to_read) {
 static int create_decode_tables(uint8_t* bit_length,
     struct decode_table* table, int size)
 {
-	int code, upper_limit = 0, i, lc[16];
+	int code, i, lc[16];
+	uint32_t upper_limit = 0;
 	uint32_t decode_pos_clone[rar5_countof(table->decode_pos)];
 	ssize_t cur_len, quick_data_size;
 
@@ -2757,19 +2763,10 @@ static int create_decode_tables(uint8_t* bit_length,
 	for(i = 1; i < 16; i++) {
 		upper_limit += lc[i];
 
-		table->decode_len[i] = upper_limit << (16 - i);
+		table->decode_len[i] = (int32_t)(upper_limit << (16 - i));
 		table->decode_pos[i] = table->decode_pos[i - 1] + lc[i - 1];
 
 		upper_limit <<= 1;
-	}
-
-	/* Verify the code-length distribution is not over-subscribed.
-	 * After the loop above, upper_limit == sum(lc[i] * 2^(16-i)).
-	 * For a valid prefix-free code this must be <= 2^16 = 65536.
-	 * An over-subscribed table (> 65536) cannot produce a valid
-	 * decode table and must be rejected. */
-	if(upper_limit > 65536) {
-		return ARCHIVE_FAILED;
 	}
 
 	memcpy(decode_pos_clone, table->decode_pos, sizeof(decode_pos_clone));
@@ -2787,7 +2784,7 @@ static int create_decode_tables(uint8_t* bit_length,
 	cur_len = 1;
 	for(code = 0; code < quick_data_size; code++) {
 		int bit_field = code << (16 - table->quick_bits);
-		int dist, pos;
+		int64_t dist, pos;
 
 		while(cur_len < rar5_countof(table->decode_len) &&
 				bit_field >= table->decode_len[cur_len]) {
@@ -2796,11 +2793,12 @@ static int create_decode_tables(uint8_t* bit_length,
 
 		table->quick_len[code] = (uint8_t) cur_len;
 
-		dist = bit_field - table->decode_len[cur_len - 1];
+		dist = (int64_t)bit_field - table->decode_len[cur_len - 1];
 		dist >>= (16 - cur_len);
 
-		pos = table->decode_pos[cur_len & 15] + dist;
-		if(cur_len < rar5_countof(table->decode_pos) && pos < size) {
+		pos = (int64_t)table->decode_pos[cur_len & 15] + dist;
+		if(cur_len < rar5_countof(table->decode_pos) && pos >= 0 &&
+		    pos < size) {
 			table->quick_num[code] = table->decode_num[pos];
 		} else {
 			table->quick_num[code] = 0;
@@ -4044,10 +4042,47 @@ static int push_data_ready(struct archive_read* a, struct rar5 *rar5,
  * tells the decompressor what it should do.
  * */
 
+/* Damaged data stops the decoder. Hand over the bytes decoded before the
+ * damage, as unRAR does, and report the error on the next call. */
+static int keep_decoded_data(struct archive_read* a, struct rar5 *rar5,
+    int error)
+{
+	int64_t end = rar5->cstate.write_ptr;
+
+	if(error == ARCHIVE_FATAL && archive_errno(&a->archive) == ENOMEM)
+		return error;
+	if(rar5->skip_mode || rar5->cstate.decode_error != 0)
+		return error;
+
+	if(cdeque_size(&rar5->cstate.filters) > 0) {
+		struct filter_info* flt;
+
+		if(CDE_OK != cdeque_front(&rar5->cstate.filters,
+		    cdeque_filter_p(&flt)))
+			return error;
+		end = rar5_min(flt->block_start, end);
+	}
+
+	if(end <= rar5->cstate.last_write_ptr)
+		return error;
+
+	push_window_data(a, rar5, rar5->cstate.last_write_ptr, end);
+	rar5->cstate.last_write_ptr = end;
+	rar5->cstate.decode_error = error;
+	return ARCHIVE_OK;
+}
+
 static int do_uncompress_file(struct archive_read* a) {
 	struct rar5 *rar5 = a->format->data;
 	int ret;
 	int64_t max_end_pos;
+
+	if(rar5->cstate.decode_error != 0) {
+		ret = rar5->cstate.decode_error;
+		rar5->cstate.decode_error = 0;
+		rar5->file.eof = 1;
+		return ret;
+	}
 
 	if(!rar5->cstate.initialized) {
 		/* Don't perform full context reinitialization if we're
@@ -4088,7 +4123,7 @@ static int do_uncompress_file(struct archive_read* a) {
 
 			ret = process_block(a);
 			if(ret != ARCHIVE_OK)
-				return ret;
+				return keep_decoded_data(a, rar5, ret);
 
 			if(rar5->cstate.last_write_ptr ==
 			    rar5->cstate.write_ptr) {
@@ -4455,6 +4490,12 @@ static int rar5_read_data(struct archive_read *a, const void **buff,
 	}
 
 	if(rar5->file.eof == 1) {
+		if(rar5->cstate.decode_error != 0) {
+			ret = rar5->cstate.decode_error;
+			rar5->cstate.decode_error = 0;
+			return ret;
+		}
+
 		/* The entry is over; report the end of the unpacked data,
 		 * so that a sparse-file aware caller does not have to
 		 * guess where it is. */
@@ -4480,7 +4521,13 @@ static int rar5_read_data(struct archive_read *a, const void **buff,
 		 * to the user. */
 
 		rar5->file.eof = 1;
-		return verify_global_checksums(a);
+		ret = verify_global_checksums(a);
+		if(ret != ARCHIVE_OK) {
+			/* The data decoded in this call is handed over first. */
+			rar5->cstate.decode_error = ret;
+			return ARCHIVE_OK;
+		}
+		return ret;
 	}
 
 	return ARCHIVE_OK;
