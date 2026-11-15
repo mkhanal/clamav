@@ -1,4 +1,4 @@
-.TH CLAMBC "1" "September 2014" "ClamAV @VERSION@" "Clam AntiVirus"
+.TH CLAMBC "1" "September 2014" "ClamCove @CLAMCOVE_VERSION@" "Clam AntiVirus"
 .SH NAME
 clambc \- Bytecode Analysis and Testing Tool
 .SH SYNOPSIS
