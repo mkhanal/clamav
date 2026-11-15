@@ -53,6 +53,11 @@ fewer than 3 bytes are not listed there: no signature matches them.
 | `rar250-solid-volumes.rar`, `.r00`, `.r01` | `a -s -m5 -v8 SVOL.RAR RAND.BIN TEXT.TXT S0*.TXT` | a solid set of 3 volumes, entries split across volumes |
 | `rar250-split.rar`, `.r00`, `.r01`, `.r02` | `a -m3 -v6 SPLIT.RAR MONO8.WAV S01.TXT` | a compressed entry split across 4 volumes |
 
+`rar250-solid-size-overflow.rar` is a RAR 2.50 solid archive whose second
+entry's header was edited (header CRC fixed) to declare an unpacked size of
+`0x7FFFFFFFFFFFFFF0` with the large-size flag. A decoder must reject it without
+signed overflow; the sanitizer builds report one if it does not.
+
 The crafted `rar20-solid.rar` is gone: its layout (an entry ending with the end
 of the block and the next block's header) was written by the removed encoder and
 no RAR 2.50 archive has it. `rar20-lz-text.rar`, `rar20-audio-1ch.rar`,
