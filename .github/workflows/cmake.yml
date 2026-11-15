@@ -98,10 +98,15 @@ jobs:
           path: vcpkg-cache
           key: vcpkg-windows-x64-${{ hashFiles('.github/workflows/cmake.yml') }}-${{ matrix.name }}-${{ github.run_id }}
 
+      - name: Set up the MSVC environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
       - name: Configure
         shell: bash
         run: >
-          cmake -S . -B build -A x64
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=x64-windows
           -DLIBCHECK_LIBRARY="$VCPKG_INSTALLATION_ROOT/installed/x64-windows/lib/checkDynamic.lib"
