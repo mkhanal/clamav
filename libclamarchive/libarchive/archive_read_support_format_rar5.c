@@ -131,6 +131,7 @@ struct file_header {
 
 	/* Optional hash fields. */
 	uint32_t stored_crc32;
+	char has_crc32;
 	uint32_t calculated_crc32;
 	uint8_t blake2sp[32];
 	blake2sp_state b2state;
@@ -349,6 +350,9 @@ struct rar5 {
 	 * Set to 0 when in * extraction mode. This is used during checksum
 	 * calculation functions. */
 	int skip_mode;
+
+	/* Set while archive_read_rar_skip_data() is skipping. */
+	const struct archive_rar_skip_limit *skip_limit;
 
 	/* Set to not zero if we're in block merging mode (i.e. when switching
 	 * to another file in multivolume archive, last block from 1st archive
@@ -2133,6 +2137,7 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 
 	if(file_flags & CRC32) {
 		rar5->file.stored_crc32 = crc;
+		rar5->file.has_crc32 = 1;
 	}
 
 	if(!rar5->cstate.switch_multivolume) {
@@ -2801,7 +2806,7 @@ static void update_crc(struct rar5 *rar5, const uint8_t* p, size_t to_read) {
 	if(verify_crc) {
 		/* Don't update CRC32 if the file doesn't have the
 		 * `stored_crc32` info filled in. */
-		if(rar5->file.stored_crc32 > 0) {
+		if(rar5->file.has_crc32) {
 			rar5->file.calculated_crc32 =
 				__archive_crc32(rar5->file.calculated_crc32, p,
 				    (unsigned int)to_read);
@@ -4269,6 +4274,7 @@ static int do_unstore_file(struct archive_read* a,
 {
 	size_t to_read;
 	const uint8_t* p;
+	int ret;
 
 	/* This function returns without any data on more than one path,
 	 * and the end of the stored data is the position all of them
@@ -4280,8 +4286,6 @@ static int do_unstore_file(struct archive_read* a,
 	if(rar5->file.bytes_remaining == 0 && rar5->main.volume > 0 &&
 	    rar5->generic.split_after > 0)
 	{
-		int ret;
-
 		rar5->cstate.switch_multivolume = 1;
 		ret = advance_multivolume(a);
 		rar5->cstate.switch_multivolume = 0;
@@ -4304,6 +4308,14 @@ static int do_unstore_file(struct archive_read* a,
 
 	to_read = rar5_min(rar5->file.bytes_remaining, 64 * 1024);
 	if(to_read == 0) {
+		/* The end of the stored data: no unpacking step runs after it
+		 * to verify the checksums. */
+		if(rar5->file.eof == 0) {
+			rar5->file.eof = 1;
+			ret = verify_global_checksums(a);
+			if(ret != ARCHIVE_OK)
+				return ret;
+		}
 		return ARCHIVE_EOF;
 	}
 
@@ -4409,7 +4421,7 @@ static int verify_checksums(struct archive_read* a) {
 		 * process is already over and we can check if calculated
 		 * checksum (CRC32 or BLAKE2sp) is the same as what is stored
 		 * in the archive. */
-		if(rar5->file.stored_crc32 > 0) {
+		if(rar5->file.has_crc32) {
 			/* Check CRC32 only when the file contains a CRC32
 			 * value for this file. */
 
@@ -4427,7 +4439,7 @@ static int verify_checksums(struct archive_read* a) {
 
 #ifndef DONT_FAIL_ON_CRC_ERROR
 				archive_set_error(&a->archive,
-				    ARCHIVE_ERRNO_FILE_FORMAT,
+				    ARCHIVE_RAR_ERRNO_CHECKSUM,
 				    "Checksum error: CRC32");
 				return ARCHIVE_FAILED;
 #endif
@@ -4461,7 +4473,7 @@ static int verify_checksums(struct archive_read* a) {
 			if(memcmp(&rar5->file.blake2sp, b2_buf, 32) != 0) {
 #ifndef DONT_FAIL_ON_CRC_ERROR
 				archive_set_error(&a->archive,
-				    ARCHIVE_ERRNO_FILE_FORMAT,
+				    ARCHIVE_RAR_ERRNO_CHECKSUM,
 				    "Checksum error: BLAKE2");
 
 				return ARCHIVE_FAILED;
@@ -4580,6 +4592,11 @@ static int rar5_read_data_skip(struct archive_read *a) {
 
 		/* Make sure to process all blocks in the compressed stream. */
 		while(rar5->file.bytes_remaining > 0) {
+			int64_t written = rar5->cstate.last_write_ptr;
+
+			if(__archive_rar_skip_limit_hit(a, rar5->skip_limit, 0))
+				return ARCHIVE_FATAL;
+
 			/* Setting the "skip mode" will allow us to skip
 			 * checksum checks during data skipping. Checking the
 			 * checksum of skipped data isn't really necessary and
@@ -4596,6 +4613,11 @@ static int rar5_read_data_skip(struct archive_read *a) {
 
 			/* Turn off "skip mode". */
 			rar5->skip_mode--;
+
+			written = rar5->cstate.last_write_ptr - written;
+			if(written > 0 && __archive_rar_skip_limit_hit(a,
+			    rar5->skip_limit, (uint64_t)written))
+				return ARCHIVE_FATAL;
 
 			if(ret < 0 || ret == ARCHIVE_EOF) {
 				/* Propagate any potential error conditions
@@ -4741,6 +4763,21 @@ rar5_info_state(struct archive *_a)
 	    strcmp(a->format->name, "rar5") != 0 || a->format->data == NULL)
 		return NULL;
 	return (struct rar5 *) a->format->data;
+}
+
+int
+__archive_read_rar5_skip_data(struct archive *_a,
+    const struct archive_rar_skip_limit *limit)
+{
+	struct rar5 *rar5 = rar5_info_state(_a);
+	int ret;
+
+	if(rar5 == NULL)
+		return ARCHIVE_FATAL;
+	rar5->skip_limit = limit;
+	ret = archive_read_data_skip(_a);
+	rar5->skip_limit = NULL;
+	return ret;
 }
 
 int
