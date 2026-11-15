@@ -757,6 +757,79 @@ class TC(testcase.TestCase):
             output = self.scan(testfile, '--alert-incomplete-rar=yes')
             assert 'Heuristics.Incomplete.RAR' not in output.out
 
+    def split_zeros_entry(self, name, declared_size, continuation_size, continuation_unknown, pieces=2):
+        """The 600 MB entry of zeros, its data cut in two pieces, as the volumes of a set hold it."""
+        archive = rar5_craft.Archive((TC.path_rar / 'rar5-unknown-size-600m.rar').read_bytes())
+        block = archive.files()[0]
+        data = block.data
+        cut = len(data) // pieces
+
+        first = block.header()
+        first.flags |= rar5_craft.HFL_SPLIT_AFTER
+        first.data_size = cut
+        first.unpacked_size = declared_size
+        first.file_flags &= ~(rar5_craft.FILE_CRC32 | rar5_craft.FILE_UNKNOWN_SIZE)
+        first.crc = None
+
+        second = block.header()
+        second.flags |= rar5_craft.HFL_SPLIT_BEFORE
+        second.data_size = len(data) - cut
+        second.unpacked_size = continuation_size
+        second.file_flags &= ~(rar5_craft.FILE_CRC32 | rar5_craft.FILE_UNKNOWN_SIZE)
+        second.crc = None
+        if continuation_unknown:
+            second.file_flags |= rar5_craft.FILE_UNKNOWN_SIZE
+
+        index = archive.blocks.index(block)
+        archive.blocks[index:index + 1] = [
+            rar5_craft.Block(first.build(), data[:cut]),
+            rar5_craft.Block(second.build(), data[cut:])]
+        return self.write_rar5(name, archive)
+
+    def test_continuation_header_does_not_change_what_the_entry_declared(self):
+        self.step_name('Test a continuation header cannot lift the declared size of an entry past the scan limits')
+
+        # The first header declares 1000 bytes; the header of the piece in the
+        # next volume says the size is unknown. Decoding stops at 1000 bytes,
+        # as unRAR writes no more, instead of running on through 600 MB.
+        if TC.backend != 'libarchive':
+            self.skipTest('The RARLAB backend is not bounded by this')
+
+        testfile = self.split_zeros_entry('continuation-unknown-size.rar', 1000, 629145600, True)
+
+        start = time.monotonic()
+        output = self.scan(testfile, '--max-filesize=2000M --max-scansize=4000M --max-scantime=100 --alert-exceeds-max=yes')
+        elapsed = time.monotonic() - start
+
+        assert output.ec == 0, output.out  # clean: nothing exceeded a limit
+        self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
+        assert elapsed < 5, 'decoding ran on for {:.1f} s past a scan time limit of 100 ms'.format(elapsed)
+
+    def test_block_spanning_two_volumes_is_decoded_in_full(self):
+        self.step_name('Test a compressed block that spans two volumes is decoded to the end of the entry')
+
+        # Each cut of the data lands inside a block of this entry. The 600 MB
+        # of zeros are found only when the whole entry is decoded; an entry
+        # that ended early and cleanly would not be, nor would it be reported
+        # as incomplete.
+        if TC.backend != 'libarchive':
+            self.skipTest('The RARLAB backend reads volumes with its own reader')
+
+        digest = hashlib.sha256()
+        zeros = bytes(1 << 20)
+        for _ in range(600):
+            digest.update(zeros)
+        path_db = TC.path_tmp / 'zeros-600m.hsb'
+        path_db.write_text('{}:629145600:RAR_ZEROS\n'.format(digest.hexdigest()))
+
+        for pieces in (2, 3, 5, 7):
+            with self.subTest(pieces=pieces):
+                testfile = self.split_zeros_entry('split-block-{}.rar'.format(pieces), 629145600, 629145600, False, pieces)
+
+                output = self.scan(testfile, '--max-filesize=2000M --max-scansize=4000M --alert-incomplete-rar=yes', path_db=path_db)
+                assert output.ec == 1, output.out  # virus
+                self.verify_output(output.out, expected=['{}: RAR_ZEROS.UNOFFICIAL FOUND'.format(testfile.name)])
+
     def test_rar5_entry_data_starts_at_the_end_of_its_header(self):
         self.step_name('Test the data of a RAR5 entry and the headers after it are read from the end of its header')
 
