@@ -44,6 +44,7 @@
 #include "archive_entry_locale.h"
 #include "archive_integer.h"
 #include "archive_ppmd7_private.h"
+#include "archive_rar_window.h"
 #include "archive_entry_private.h"
 #include "archive_time_private.h"
 
@@ -277,6 +278,7 @@ struct comp_state {
 	uint64_t dict_size;          /* Dictionary size the entry declares. */
 	uint8_t* window_buf;         /* Circular buffer used during
 	                                decompression. */
+	size_t window_alloc;         /* Size window_buf was allocated with. */
 	uint8_t* filtered_buf;       /* Buffer used when applying filters. */
 	const uint8_t* block_buf;    /* Buffer used when merging blocks. */
 	ssize_t window_mask;         /* Convenience field; window_size - 1. */
@@ -371,6 +373,10 @@ struct multivolume {
 /* Main context structure. */
 struct rar5 {
 	int header_initialized;
+
+	/* Directory for the unnamed file behind a large window; NULL keeps
+	 * every window in anonymous memory. */
+	char *window_dir;
 
 	/* Set to 1 if current file is positioned AFTER the magic value
 	 * of the archive file. This is used in header reading functions. */
@@ -1678,12 +1684,13 @@ static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
 	const uint64_t written = (uint64_t) rar5->cstate.solid_offset;
 	const uint64_t old_size = (uint64_t) rar5->cstate.window_size;
 	const uint64_t keep = rar5_min(written, old_size);
-	uint8_t* window_buf = calloc(1, (size_t) window_size);
+	uint8_t* window_buf = __archive_rar_window_alloc((size_t) window_size,
+	    rar5->window_dir);
 	uint8_t* filtered_buf = calloc(1, (size_t) window_size);
 	uint64_t pos;
 
 	if(window_buf == NULL || filtered_buf == NULL) {
-		free(window_buf);
+		__archive_rar_window_free(window_buf, (size_t) window_size);
 		free(filtered_buf);
 		return "Not enough memory for the window of this entry";
 	}
@@ -1693,9 +1700,11 @@ static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
 		    rar5->cstate.window_buf[pos & (old_size - 1)];
 
 	clear_data_ready_stack(rar5);
-	free(rar5->cstate.window_buf);
+	__archive_rar_window_free(rar5->cstate.window_buf,
+	    rar5->cstate.window_alloc);
 	free(rar5->cstate.filtered_buf);
 	rar5->cstate.window_buf = window_buf;
+	rar5->cstate.window_alloc = (size_t) window_size;
 	rar5->cstate.filtered_buf = filtered_buf;
 	return NULL;
 }
@@ -2571,23 +2580,28 @@ static int init_unpack(struct rar5 *rar5) {
 	rar5->file.calculated_crc32 = 0;
 	init_window_mask(rar5);
 
-	free(rar5->cstate.window_buf);
+	__archive_rar_window_free(rar5->cstate.window_buf,
+	    rar5->cstate.window_alloc);
 	free(rar5->cstate.filtered_buf);
 
 	rar5->cstate.window_buf = NULL;
+	rar5->cstate.window_alloc = 0;
 	rar5->cstate.filtered_buf = NULL;
 
 	if(rar5->cstate.window_size > 0) {
-		uint8_t* window_buf = calloc(1, rar5->cstate.window_size);
-		uint8_t* filtered_buf = calloc(1, rar5->cstate.window_size);
+		const size_t window_size = (size_t) rar5->cstate.window_size;
+		uint8_t* window_buf = __archive_rar_window_alloc(window_size,
+		    rar5->window_dir);
+		uint8_t* filtered_buf = calloc(1, window_size);
 
 		if(window_buf == NULL || filtered_buf == NULL) {
-			free(window_buf);
+			__archive_rar_window_free(window_buf, window_size);
 			free(filtered_buf);
 			return ARCHIVE_FAILED;
 		}
 
 		rar5->cstate.window_buf = window_buf;
+		rar5->cstate.window_alloc = window_size;
 		rar5->cstate.filtered_buf = filtered_buf;
 	}
 
@@ -4535,8 +4549,10 @@ static int64_t rar5_seek_data(struct archive_read *a, int64_t offset,
 static int rar5_cleanup(struct archive_read *a) {
 	struct rar5 *rar5 = a->format->data;
 
-	free(rar5->cstate.window_buf);
+	__archive_rar_window_free(rar5->cstate.window_buf,
+	    rar5->cstate.window_alloc);
 	free(rar5->cstate.filtered_buf);
+	free(rar5->window_dir);
 	clear_data_ready_stack(rar5);
 
 	free(rar5->vol.push_buf);
@@ -4656,6 +4672,24 @@ __archive_read_rar5_skip_data(struct archive *_a,
 	ret = archive_read_data_skip(_a);
 	rar5->skip_limit = NULL;
 	return ret;
+}
+
+int
+__archive_read_rar5_set_window_dir(struct archive *_a, const char *dir)
+{
+	struct rar5 *rar5 = rar5_info_state(_a);
+	char *copy = NULL;
+
+	if(rar5 == NULL)
+		return ARCHIVE_FATAL;
+	if(dir != NULL && dir[0] != '\0') {
+		copy = strdup(dir);
+		if(copy == NULL)
+			return ARCHIVE_FATAL;
+	}
+	free(rar5->window_dir);
+	rar5->window_dir = copy;
+	return ARCHIVE_OK;
 }
 
 int

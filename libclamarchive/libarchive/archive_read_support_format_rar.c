@@ -42,6 +42,7 @@
 #include "archive_entry_locale.h"
 #include "archive_integer.h"
 #include "archive_ppmd7_private.h"
+#include "archive_rar_window.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
 #include "archive_rar_unpack20.h"
@@ -301,6 +302,10 @@ struct audio_state
 
 struct rar
 {
+  /* Directory for the unnamed file behind a large window; NULL keeps every
+   * window in anonymous memory. */
+  char *window_dir;
+
   /* Entries from main RAR header */
   unsigned main_flags;
   unsigned long file_crc;
@@ -1455,7 +1460,9 @@ archive_read_format_rar_cleanup(struct archive_read *a)
   free(rar->filename_save);
   free(rar->dbo);
   free(rar->unp_buffer);
-  free(rar->lzss.window);
+  if (rar->lzss.window != NULL)
+    __archive_rar_window_free(rar->lzss.window, (size_t)rar->lzss.mask + 1);
+  free(rar->window_dir);
   rar20_decoder_free(rar->dec20);
   free(rar->info_name);
   free(rar->comment_data);
@@ -1590,6 +1597,29 @@ archive_read_rar_skip_data(struct archive *_a,
     return (ret);
   }
   return (__archive_read_rar5_skip_data(_a, limit));
+}
+
+int
+archive_read_rar_set_window_dir(struct archive *_a, const char *dir)
+{
+  struct archive_read *a;
+  int r;
+
+  if ((a = rar_info_reader(_a, "rar")) != NULL) {
+    struct rar *rar = a->format->data;
+    char *copy = NULL;
+
+    if (dir != NULL && dir[0] != '\0') {
+      copy = strdup(dir);
+      if (copy == NULL)
+        return (ARCHIVE_FATAL);
+    }
+    free(rar->window_dir);
+    rar->window_dir = copy;
+    return (ARCHIVE_OK);
+  }
+  r = __archive_read_rar5_set_window_dir(_a, dir);
+  return (r);
 }
 
 int
@@ -2992,15 +3022,17 @@ rar_prepare_window(struct archive_read *a)
                         "Zero window size is invalid");
       return (ARCHIVE_FAILED);
     }
-    new_window = realloc(rar->lzss.window, new_size);
+    new_window = __archive_rar_window_alloc(new_size, rar->window_dir);
     if (new_window == NULL) {
       archive_set_error(&a->archive, ENOMEM,
                         "Unable to allocate memory for uncompressed data");
       return (ARCHIVE_FATAL);
     }
+    if (rar->lzss.window != NULL)
+      __archive_rar_window_free(rar->lzss.window,
+                                (size_t)rar->lzss.mask + 1);
     rar->lzss.window = (unsigned char *)new_window;
     rar->dictionary_size = new_size;
-    memset(rar->lzss.window, 0, rar->dictionary_size);
     rar->lzss.mask = rar->dictionary_size - 1;
   }
 

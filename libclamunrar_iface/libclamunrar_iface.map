@@ -5,6 +5,7 @@ CLAMAV_PRIVATE {
 		libclamunrar_iface_LTX_unrar_extract_file;
 		libclamunrar_iface_LTX_unrar_skip_file;
 		libclamunrar_iface_LTX_unrar_set_skip_limits;
+		libclamunrar_iface_LTX_unrar_set_temp_dir;
 		libclamunrar_iface_LTX_unrar_close;
 	local:
 		*;

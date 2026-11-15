@@ -158,6 +158,20 @@ int archive_read_rar_set_output_bound(struct archive *, uint64_t);
 /* The RAR5 reader's half of archive_read_rar_set_output_bound(). */
 int __archive_read_rar5_set_output_bound(struct archive *, uint64_t);
 
+/*
+ * Tell the reader the directory for the unnamed temporary file that backs a
+ * decompression window above RAR_WINDOW_FILE_THRESHOLD (archive_rar_window.h);
+ * NULL keeps every window in anonymous memory. Call after opening, before
+ * reading entry data.
+ */
+int archive_read_rar_set_window_dir(struct archive *, const char *);
+
+/* The RAR5 reader's half of archive_read_rar_set_window_dir(). */
+int __archive_read_rar5_set_window_dir(struct archive *, const char *);
+
+/* Receives how each large window was backed, and why a way failed. */
+void __archive_rar_window_set_logger(void (*)(const char *));
+
 /* CRC32 as RAR uses it for data and header checksums. */
 uint32_t archive_rar_crc32(const void *, size_t);
 
