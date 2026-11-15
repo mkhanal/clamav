@@ -1,4 +1,4 @@
-.TH "clamscan" "1" "December 4, 2013" "ClamAV @VERSION@" "Clam AntiVirus"
+.TH "clamscan" "1" "December 4, 2013" "ClamCove @CLAMCOVE_VERSION@" "Clam AntiVirus"
 .SH "NAME"
 .LP
 clamscan \- scan files and directories for viruses

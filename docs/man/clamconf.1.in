@@ -1,4 +1,4 @@
-.TH "Config tool" "1" "February 12, 2007" "ClamAV @VERSION@" "Clam AntiVirus"
+.TH "Config tool" "1" "February 12, 2007" "ClamCove @CLAMCOVE_VERSION@" "Clam AntiVirus"
 .SH "NAME"
 .LP 
 clamconf \- Clam AntiVirus configuration utility
