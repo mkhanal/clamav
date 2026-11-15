@@ -1868,6 +1868,9 @@ int scanmanager(const struct optstruct *opts)
     if (optget(opts, "alert-encrypted-doc")->enabled)
         options.heuristic |= CL_SCAN_HEURISTIC_ENCRYPTED_DOC;
 
+    if (optget(opts, "alert-incomplete-rar")->enabled)
+        options.heuristic |= CL_SCAN_HEURISTIC_INCOMPLETE_RAR;
+
     /* TODO: Remove deprecated option in a future feature release */
     if ((optget(opts, "block-macros")->enabled) ||
         (optget(opts, "alert-macros")->enabled)) {

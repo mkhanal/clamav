@@ -603,6 +603,11 @@ Alert on encrypted documents (encrypted .pdf).
 .br
 Default: no
 .TP
+\fBAlertIncompleteRAR BOOL\fR
+Alert on RAR archives whose contents could not all be extracted and scanned (a single volume of a multi-volume set, missing volumes, corrupt or truncated data, an entry that fails to extract) with the Heuristics.Incomplete.RAR heuristic signature. Encrypted archives are covered by AlertEncryptedArchive.
+.br
+Default: no
+.TP
 \fBAlertOLE2Macros BOOL\fR
 Alert on OLE2 files containing VBA macros (Heuristics.OLE2.ContainsMacros).
 .br
