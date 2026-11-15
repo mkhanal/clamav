@@ -2989,7 +2989,8 @@ static int
 expand20(struct archive_read *a, int64_t *end)
 {
   struct rar *rar = a->format->data;
-  int64_t entry_end = rar->solid_base + rar->unp_size;
+  int64_t entry_end = rar->unp_size > INT64_MAX - rar->solid_base ?
+      INT64_MAX : rar->solid_base + rar->unp_size;
   int r;
 
   if (*end > entry_end)
