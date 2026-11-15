@@ -759,3 +759,17 @@ rar20_decoder_fill(struct rar20_decoder *d, rar20_byte_fn next_byte,
 	}
 	return (RAR20_OK);
 }
+
+int
+rar20_decoder_read_header(struct rar20_decoder *d, rar20_byte_fn next_byte,
+    void *ctx)
+{
+	int err;
+
+	d->br.next_byte = next_byte;
+	d->br.ctx = ctx;
+	if (d->hdr_read)
+		return (RAR20_OK);
+	err = read_block_header(d);
+	return (err == RAR20_ERR_EOF ? RAR20_ERR_OUT_OF_DATA : err);
+}

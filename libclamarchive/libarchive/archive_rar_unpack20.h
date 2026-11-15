@@ -72,4 +72,13 @@ int rar20_decoder_fill(struct rar20_decoder *, rar20_byte_fn next_byte,
     void *ctx, unsigned char *win, size_t mask, int64_t *position,
     int64_t end, int64_t entry_end);
 
+/*
+ * Reads the header and tables of the block the entry's data starts with, if
+ * it starts one. An entry with no output (an empty file) can carry them for
+ * the next entry of a solid stream. Returns RAR20_OK or a negative
+ * RAR20_ERR_* code.
+ */
+int rar20_decoder_read_header(struct rar20_decoder *, rar20_byte_fn next_byte,
+    void *ctx);
+
 #endif
