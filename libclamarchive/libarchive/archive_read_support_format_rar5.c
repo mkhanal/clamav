@@ -131,6 +131,7 @@ struct file_header {
 
 	/* Optional hash fields. */
 	uint32_t stored_crc32;
+	char has_crc32;
 	uint32_t calculated_crc32;
 	uint8_t blake2sp[32];
 	blake2sp_state b2state;
@@ -238,6 +239,10 @@ struct comp_state {
 	   encrypted, meaning no data in the buffer can be trusted */
 	uint8_t data_encrypted : 1;
 
+	/* Error found in damaged data after the bytes decoded before it were
+	   handed over; returned by the next call. */
+	int decode_error;
+
 	signed int notused : 3;
 
 	int flags;                   /* Uncompression flags. */
@@ -318,7 +323,8 @@ struct main_header {
 	/* If this a multi-file archive? */
 	uint8_t volume : 1;
 	uint8_t endarc : 1;
-	uint8_t notused : 5;
+	uint8_t seen : 1;
+	uint8_t notused : 4;
 
 	unsigned int vol_no;
 };
@@ -349,6 +355,9 @@ struct rar5 {
 	 * Set to 0 when in * extraction mode. This is used during checksum
 	 * calculation functions. */
 	int skip_mode;
+
+	/* Set while archive_read_rar_skip_data() is skipping. */
+	const struct archive_rar_skip_limit *skip_limit;
 
 	/* Set to not zero if we're in block merging mode (i.e. when switching
 	 * to another file in multivolume archive, last block from 1st archive
@@ -394,6 +403,9 @@ struct rar5 {
 	/* First archive comment, for archive_read_rar_comment_info(). */
 	struct archive_rar_comment_info comment;
 	void *comment_data;
+
+	/* A main or file header failed its CRC32. */
+	uint8_t header_crc_failed;
 };
 
 /* Forward function declarations. */
@@ -1227,42 +1239,6 @@ enum HEADER_FLAGS {
 	HFL_INHERITED = 0x0040
 };
 
-static int process_main_locator_extra_block(struct archive_read* a,
-    struct rar5 *rar5)
-{
-	uint64_t locator_flags;
-	int r;
-
-	enum LOCATOR_FLAGS {
-		QLIST = 0x01, RECOVERY = 0x02,
-	};
-
-	r = read_var(a, &locator_flags, NULL);
-	if(r != ARCHIVE_OK) {
-		return r;
-	}
-
-	if(locator_flags & QLIST) {
-		r = read_var(a, &rar5->qlist_offset, NULL);
-		if(r != ARCHIVE_OK) {
-			return r;
-		}
-
-		/* qlist is not used */
-	}
-
-	if(locator_flags & RECOVERY) {
-		r = read_var(a, &rar5->rr_offset, NULL);
-		if(r != ARCHIVE_OK) {
-			return r;
-		}
-
-		/* rr is not used */
-	}
-
-	return ARCHIVE_OK;
-}
-
 static int parse_file_extra_hash(struct archive_read* a, struct rar5 *rar5,
     int64_t* extra_data_size)
 {
@@ -2065,12 +2041,8 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 		/* Host OS is Unix */
 		archive_entry_set_mode(entry, (__LA_MODE_T) file_attr);
 	} else {
-		/* Unknown host OS */
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-				"Unsupported Host OS: 0x%jx",
-				(uintmax_t)host_os);
-
-		return ARCHIVE_FATAL;
+		/* Unknown host OS: a plain file, as nothing else is known. */
+		archive_entry_set_mode(entry, 0644 | AE_IFREG);
 	}
 
 	r = read_var_sized(a, &name_size, NULL);
@@ -2133,6 +2105,7 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 
 	if(file_flags & CRC32) {
 		rar5->file.stored_crc32 = crc;
+		rar5->file.has_crc32 = 1;
 	}
 
 	if(!rar5->cstate.switch_multivolume) {
@@ -2141,6 +2114,7 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 		rar5->cstate.block_parsing_finished = 1;
 		rar5->cstate.all_filters_applied = 1;
 		rar5->cstate.initialized = 0;
+		rar5->cstate.decode_error = 0;
 		memset(&rar5->last_block_hdr, 0, sizeof(rar5->last_block_hdr));
 	}
 
@@ -2261,8 +2235,6 @@ static int process_head_main(struct archive_read* a, struct rar5 *rar5,
 {
 	int ret;
 	uint64_t extra_data_size = 0;
-	size_t extra_field_size = 0;
-	size_t extra_field_id = 0;
 	size_t archive_flags = 0;
 
 	enum MAIN_FLAGS {
@@ -2272,11 +2244,6 @@ static int process_head_main(struct archive_read* a, struct rar5 *rar5,
 		SOLID = 0x0004,          /* solid archive */
 		PROTECT = 0x0008,        /* contains Recovery info */
 		LOCK = 0x0010,           /* readonly flag, not used */
-	};
-
-	enum MAIN_EXTRA {
-		// Just one attribute here.
-		LOCATOR = 0x01,
 	};
 
 	(void) entry;
@@ -2328,45 +2295,8 @@ static int process_head_main(struct archive_read* a, struct rar5 *rar5,
 		return ARCHIVE_EOF;
 	}
 
-	if(extra_data_size == 0) {
-		/* Early return. */
-		return ARCHIVE_OK;
-	}
-
-	ret = read_var_sized(a, &extra_field_size, NULL);
-	if(ret != ARCHIVE_OK) {
-		return ret;
-	}
-
-	ret = read_var_sized(a, &extra_field_id, NULL);
-	if(ret != ARCHIVE_OK) {
-		return ret;
-	}
-
-	if(extra_field_size == 0) {
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-		    "Invalid extra field size");
-		return ARCHIVE_FATAL;
-	}
-
-	switch(extra_field_id) {
-		case LOCATOR:
-			ret = process_main_locator_extra_block(a, rar5);
-			if(ret != ARCHIVE_OK) {
-				/* Error while parsing main locator extra
-				 * block. */
-				return ret;
-			}
-
-			break;
-		default:
-			archive_set_error(&a->archive,
-			    ARCHIVE_ERRNO_FILE_FORMAT,
-			    "Unsupported extra type (0x%jx)",
-			    (uintmax_t)extra_field_id);
-			return ARCHIVE_FATAL;
-	}
-
+	/* The extra records of the main header (the locator among them) are
+	 * not used: the rest of the block is skipped by the caller. */
 	return ARCHIVE_OK;
 }
 
@@ -2540,19 +2470,16 @@ static int process_base_block(struct archive_read* a,
 	/* Read the whole header data into memory, maximum memory use here is
 	 * 2MB. */
 	if(!read_ahead(a, hdr_size, &p)) {
-		return ARCHIVE_EOF;
+		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+		    "Truncated header");
+		return ARCHIVE_FATAL;
 	}
 
 	/* Verify the CRC32 of the header data. */
 	computed_crc = (uint32_t) __archive_crc32(0, p, (int) hdr_size);
-	if(computed_crc != hdr_crc) {
-#ifndef DONT_FAIL_ON_CRC_ERROR
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-		    "Header CRC error");
-
-		return ARCHIVE_FATAL;
-#endif
-	}
+	/* A header CRC mismatch does not stop the read, as with unRAR. */
+	if(computed_crc != hdr_crc)
+		rar5->header_crc_failed = 1;
 
 	/* Remember the first byte of the block body so we can later skip
 	 * any bytes the sub-parser leaves unconsumed. */
@@ -2580,6 +2507,7 @@ static int process_base_block(struct archive_read* a,
 	/* Those are possible header ids in RARv5. */
 	switch(header_id) {
 		case HEAD_MAIN:
+			rar5->main.seen = 1;
 			ret = process_head_main(a, rar5, entry, header_flags);
 
 			/* Main header doesn't have any files in it, so it's
@@ -2750,6 +2678,13 @@ static int rar5_read_header(struct archive_read *a,
 	} while(ret == ARCHIVE_RETRY ||
 			(rar5->main.endarc > 0 && ret == ARCHIVE_OK));
 
+	/* An archive without a main header is not an archive. */
+	if(ret == ARCHIVE_EOF && !rar5->main.seen) {
+		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+		    "No main header");
+		return ARCHIVE_FATAL;
+	}
+
 	return ret;
 }
 
@@ -2801,7 +2736,7 @@ static void update_crc(struct rar5 *rar5, const uint8_t* p, size_t to_read) {
 	if(verify_crc) {
 		/* Don't update CRC32 if the file doesn't have the
 		 * `stored_crc32` info filled in. */
-		if(rar5->file.stored_crc32 > 0) {
+		if(rar5->file.has_crc32) {
 			rar5->file.calculated_crc32 =
 				__archive_crc32(rar5->file.calculated_crc32, p,
 				    (unsigned int)to_read);
@@ -2821,7 +2756,8 @@ static void update_crc(struct rar5 *rar5, const uint8_t* p, size_t to_read) {
 static int create_decode_tables(uint8_t* bit_length,
     struct decode_table* table, int size)
 {
-	int code, upper_limit = 0, i, lc[16];
+	int code, i, lc[16];
+	uint32_t upper_limit = 0;
 	uint32_t decode_pos_clone[rar5_countof(table->decode_pos)];
 	ssize_t cur_len, quick_data_size;
 
@@ -2841,19 +2777,10 @@ static int create_decode_tables(uint8_t* bit_length,
 	for(i = 1; i < 16; i++) {
 		upper_limit += lc[i];
 
-		table->decode_len[i] = upper_limit << (16 - i);
+		table->decode_len[i] = (int32_t)(upper_limit << (16 - i));
 		table->decode_pos[i] = table->decode_pos[i - 1] + lc[i - 1];
 
 		upper_limit <<= 1;
-	}
-
-	/* Verify the code-length distribution is not over-subscribed.
-	 * After the loop above, upper_limit == sum(lc[i] * 2^(16-i)).
-	 * For a valid prefix-free code this must be <= 2^16 = 65536.
-	 * An over-subscribed table (> 65536) cannot produce a valid
-	 * decode table and must be rejected. */
-	if(upper_limit > 65536) {
-		return ARCHIVE_FAILED;
 	}
 
 	memcpy(decode_pos_clone, table->decode_pos, sizeof(decode_pos_clone));
@@ -2871,7 +2798,7 @@ static int create_decode_tables(uint8_t* bit_length,
 	cur_len = 1;
 	for(code = 0; code < quick_data_size; code++) {
 		int bit_field = code << (16 - table->quick_bits);
-		int dist, pos;
+		int64_t dist, pos;
 
 		while(cur_len < rar5_countof(table->decode_len) &&
 				bit_field >= table->decode_len[cur_len]) {
@@ -2880,11 +2807,12 @@ static int create_decode_tables(uint8_t* bit_length,
 
 		table->quick_len[code] = (uint8_t) cur_len;
 
-		dist = bit_field - table->decode_len[cur_len - 1];
+		dist = (int64_t)bit_field - table->decode_len[cur_len - 1];
 		dist >>= (16 - cur_len);
 
-		pos = table->decode_pos[cur_len & 15] + dist;
-		if(cur_len < rar5_countof(table->decode_pos) && pos < size) {
+		pos = (int64_t)table->decode_pos[cur_len & 15] + dist;
+		if(cur_len < rar5_countof(table->decode_pos) && pos >= 0 &&
+		    pos < size) {
 			table->quick_num[code] = table->decode_num[pos];
 		} else {
 			table->quick_num[code] = 0;
@@ -4128,10 +4056,47 @@ static int push_data_ready(struct archive_read* a, struct rar5 *rar5,
  * tells the decompressor what it should do.
  * */
 
+/* Damaged data stops the decoder. Hand over the bytes decoded before the
+ * damage, as unRAR does, and report the error on the next call. */
+static int keep_decoded_data(struct archive_read* a, struct rar5 *rar5,
+    int error)
+{
+	int64_t end = rar5->cstate.write_ptr;
+
+	if(error == ARCHIVE_FATAL && archive_errno(&a->archive) == ENOMEM)
+		return error;
+	if(rar5->skip_mode || rar5->cstate.decode_error != 0)
+		return error;
+
+	if(cdeque_size(&rar5->cstate.filters) > 0) {
+		struct filter_info* flt;
+
+		if(CDE_OK != cdeque_front(&rar5->cstate.filters,
+		    cdeque_filter_p(&flt)))
+			return error;
+		end = rar5_min(flt->block_start, end);
+	}
+
+	if(end <= rar5->cstate.last_write_ptr)
+		return error;
+
+	push_window_data(a, rar5, rar5->cstate.last_write_ptr, end);
+	rar5->cstate.last_write_ptr = end;
+	rar5->cstate.decode_error = error;
+	return ARCHIVE_OK;
+}
+
 static int do_uncompress_file(struct archive_read* a) {
 	struct rar5 *rar5 = a->format->data;
 	int ret;
 	int64_t max_end_pos;
+
+	if(rar5->cstate.decode_error != 0) {
+		ret = rar5->cstate.decode_error;
+		rar5->cstate.decode_error = 0;
+		rar5->file.eof = 1;
+		return ret;
+	}
 
 	if(!rar5->cstate.initialized) {
 		/* Don't perform full context reinitialization if we're
@@ -4172,7 +4137,7 @@ static int do_uncompress_file(struct archive_read* a) {
 
 			ret = process_block(a);
 			if(ret != ARCHIVE_OK)
-				return ret;
+				return keep_decoded_data(a, rar5, ret);
 
 			if(rar5->cstate.last_write_ptr ==
 			    rar5->cstate.write_ptr) {
@@ -4269,6 +4234,7 @@ static int do_unstore_file(struct archive_read* a,
 {
 	size_t to_read;
 	const uint8_t* p;
+	int ret;
 
 	/* This function returns without any data on more than one path,
 	 * and the end of the stored data is the position all of them
@@ -4280,8 +4246,6 @@ static int do_unstore_file(struct archive_read* a,
 	if(rar5->file.bytes_remaining == 0 && rar5->main.volume > 0 &&
 	    rar5->generic.split_after > 0)
 	{
-		int ret;
-
 		rar5->cstate.switch_multivolume = 1;
 		ret = advance_multivolume(a);
 		rar5->cstate.switch_multivolume = 0;
@@ -4304,6 +4268,14 @@ static int do_unstore_file(struct archive_read* a,
 
 	to_read = rar5_min(rar5->file.bytes_remaining, 64 * 1024);
 	if(to_read == 0) {
+		/* The end of the stored data: no unpacking step runs after it
+		 * to verify the checksums. */
+		if(rar5->file.eof == 0) {
+			rar5->file.eof = 1;
+			ret = verify_global_checksums(a);
+			if(ret != ARCHIVE_OK)
+				return ret;
+		}
 		return ARCHIVE_EOF;
 	}
 
@@ -4409,7 +4381,7 @@ static int verify_checksums(struct archive_read* a) {
 		 * process is already over and we can check if calculated
 		 * checksum (CRC32 or BLAKE2sp) is the same as what is stored
 		 * in the archive. */
-		if(rar5->file.stored_crc32 > 0) {
+		if(rar5->file.has_crc32) {
 			/* Check CRC32 only when the file contains a CRC32
 			 * value for this file. */
 
@@ -4427,7 +4399,7 @@ static int verify_checksums(struct archive_read* a) {
 
 #ifndef DONT_FAIL_ON_CRC_ERROR
 				archive_set_error(&a->archive,
-				    ARCHIVE_ERRNO_FILE_FORMAT,
+				    ARCHIVE_RAR_ERRNO_CHECKSUM,
 				    "Checksum error: CRC32");
 				return ARCHIVE_FAILED;
 #endif
@@ -4461,7 +4433,7 @@ static int verify_checksums(struct archive_read* a) {
 			if(memcmp(&rar5->file.blake2sp, b2_buf, 32) != 0) {
 #ifndef DONT_FAIL_ON_CRC_ERROR
 				archive_set_error(&a->archive,
-				    ARCHIVE_ERRNO_FILE_FORMAT,
+				    ARCHIVE_RAR_ERRNO_CHECKSUM,
 				    "Checksum error: BLAKE2");
 
 				return ARCHIVE_FAILED;
@@ -4532,6 +4504,12 @@ static int rar5_read_data(struct archive_read *a, const void **buff,
 	}
 
 	if(rar5->file.eof == 1) {
+		if(rar5->cstate.decode_error != 0) {
+			ret = rar5->cstate.decode_error;
+			rar5->cstate.decode_error = 0;
+			return ret;
+		}
+
 		/* The entry is over; report the end of the unpacked data,
 		 * so that a sparse-file aware caller does not have to
 		 * guess where it is. */
@@ -4557,7 +4535,13 @@ static int rar5_read_data(struct archive_read *a, const void **buff,
 		 * to the user. */
 
 		rar5->file.eof = 1;
-		return verify_global_checksums(a);
+		ret = verify_global_checksums(a);
+		if(ret != ARCHIVE_OK) {
+			/* The data decoded in this call is handed over first. */
+			rar5->cstate.decode_error = ret;
+			return ARCHIVE_OK;
+		}
+		return ret;
 	}
 
 	return ARCHIVE_OK;
@@ -4580,6 +4564,11 @@ static int rar5_read_data_skip(struct archive_read *a) {
 
 		/* Make sure to process all blocks in the compressed stream. */
 		while(rar5->file.bytes_remaining > 0) {
+			int64_t written = rar5->cstate.last_write_ptr;
+
+			if(__archive_rar_skip_limit_hit(a, rar5->skip_limit, 0))
+				return ARCHIVE_FATAL;
+
 			/* Setting the "skip mode" will allow us to skip
 			 * checksum checks during data skipping. Checking the
 			 * checksum of skipped data isn't really necessary and
@@ -4596,6 +4585,11 @@ static int rar5_read_data_skip(struct archive_read *a) {
 
 			/* Turn off "skip mode". */
 			rar5->skip_mode--;
+
+			written = rar5->cstate.last_write_ptr - written;
+			if(written > 0 && __archive_rar_skip_limit_hit(a,
+			    rar5->skip_limit, (uint64_t)written))
+				return ARCHIVE_FATAL;
 
 			if(ret < 0 || ret == ARCHIVE_EOF) {
 				/* Propagate any potential error conditions
@@ -4744,6 +4738,21 @@ rar5_info_state(struct archive *_a)
 }
 
 int
+__archive_read_rar5_skip_data(struct archive *_a,
+    const struct archive_rar_skip_limit *limit)
+{
+	struct rar5 *rar5 = rar5_info_state(_a);
+	int ret;
+
+	if(rar5 == NULL)
+		return ARCHIVE_FATAL;
+	rar5->skip_limit = limit;
+	ret = archive_read_data_skip(_a);
+	rar5->skip_limit = NULL;
+	return ret;
+}
+
+int
 __archive_read_rar5_entry_info(struct archive *_a,
     struct archive_rar_entry_info *info)
 {
@@ -4753,6 +4762,16 @@ __archive_read_rar5_entry_info(struct archive *_a,
 		return ARCHIVE_FATAL;
 	*info = rar5->info;
 	return ARCHIVE_OK;
+}
+
+int
+__archive_read_rar5_header_damaged(struct archive *_a)
+{
+	struct rar5 *rar5 = rar5_info_state(_a);
+
+	if(rar5 == NULL)
+		return 0;
+	return rar5->header_crc_failed;
 }
 
 int

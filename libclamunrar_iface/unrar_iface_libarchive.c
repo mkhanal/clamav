@@ -57,6 +57,12 @@
 #include <sys/types.h>
 #include <wchar.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/time.h>
+#endif
+
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -129,6 +135,9 @@ typedef struct unrar_handle_tag {
     char **volumes;
     size_t volume_count;
     uint32_t rar5_hash32; /* unRAR's RAR5 hash field keeps its last value. */
+    int skip_bytes_limited;
+    uint64_t skip_bytes_left; /* Decoding skipped entries may still cost this much. */
+    uint64_t skip_deadline_usec;
 } unrar_handle_t;
 
 /*
@@ -804,7 +813,9 @@ static unsigned char *unpack_comment(const struct archive_rar_comment_info *cmt,
     file_head[1] = (unsigned char)((hcrc >> 8) & 0xff);
     memcpy(arc + pos, file_head, sizeof(file_head));
     pos += sizeof(file_head);
-    memcpy(arc + pos, cmt->data, cmt->size);
+    if (cmt->size > 0) {
+        memcpy(arc + pos, cmt->data, cmt->size);
+    }
     pos += cmt->size;
 
     hcrc   = archive_rar_crc32(arc + 7 + 2, sizeof(rar4_main) - 2);
@@ -954,7 +965,7 @@ static void read_comment(struct archive *a, char **comment, uint32_t *comment_si
 static cl_unrar_error_t header_error(unrar_handle_t *h, int r)
 {
     if (r == ARCHIVE_EOF) {
-        return UNRAR_BREAK;
+        return archive_read_rar_header_damaged(h->archive) ? UNRAR_ERR : UNRAR_BREAK;
     }
     if (archive_read_has_encrypted_entries(h->archive) > 0 && h->entry != NULL &&
         archive_entry_is_metadata_encrypted(h->entry)) {
@@ -1100,16 +1111,48 @@ static int entry_has_no_output(const struct archive_rar_entry_info *info)
     return info->split_before || info->redir_type != ARCHIVE_RAR_REDIR_NONE;
 }
 
+static uint64_t now_usec(void)
+{
+#ifdef _WIN32
+    FILETIME ft;
+    ULARGE_INTEGER t;
+
+    GetSystemTimeAsFileTime(&ft);
+    t.LowPart  = ft.dwLowDateTime;
+    t.HighPart = ft.dwHighDateTime;
+    /* 100 ns ticks since 1601 to microseconds since 1970. */
+    return (t.QuadPart - 116444736000000000ULL) / 10;
+#else
+    struct timeval tv;
+
+    (void)gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000000 + (uint64_t)tv.tv_usec;
+#endif
+}
+
+static int skip_deadline_passed(void *ctx)
+{
+    const unrar_handle_t *h = ctx;
+
+    return h->skip_deadline_usec != 0 && now_usec() > h->skip_deadline_usec;
+}
+
 static cl_unrar_error_t skip_current(unrar_handle_t *h)
 {
-    int r = archive_read_data_skip(h->archive);
+    struct archive_rar_skip_limit limit;
+    int r;
+
+    limit.budget   = h->skip_bytes_limited ? &h->skip_bytes_left : NULL;
+    limit.stop     = h->skip_deadline_usec != 0 ? skip_deadline_passed : NULL;
+    limit.stop_ctx = h;
+    r              = archive_read_rar_skip_data(h->archive, &limit);
 
     h->state = HEADER_NONE;
     if (r < ARCHIVE_WARN) {
         unrar_dbgmsg("unrar_skip_file: %s\n", archive_error_string(h->archive));
-        h->status = UNRAR_ERR;
+        h->status = archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_SKIP_LIMIT ? UNRAR_ELIMIT : UNRAR_ERR;
         h->state  = HEADER_DONE;
-        return UNRAR_ERR;
+        return h->status;
     }
     return UNRAR_OK;
 }
@@ -1120,6 +1163,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     struct archive_rar_entry_info info;
     cl_unrar_error_t status = UNRAR_OK;
     int fd                  = -1;
+    int entry_rejected      = 0;
     const void *buf;
     size_t size;
     la_int64_t offset;
@@ -1167,7 +1211,11 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
         }
         if (r < ARCHIVE_WARN) {
             unrar_dbgmsg("unrar_extract_file: %s\n", archive_error_string(h->archive));
-            if (info.split_after) {
+            if (archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_UNSUPPORTED ||
+                archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_CHECKSUM) {
+                status         = UNRAR_ERR;
+                entry_rejected = 1;
+            } else if (info.split_after) {
                 status = UNRAR_EOPEN;
             }
             break;
@@ -1197,6 +1245,9 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     if (status == UNRAR_OK) {
         h->state = HEADER_NONE;
         unrar_dbgmsg("unrar_extract_file: Extracted file to: %s\n", destPath);
+    } else if (entry_rejected) {
+        /* The entry cannot be decoded or fails its checksum, but the archive can still be read on. */
+        h->state = HEADER_NONE;
     } else {
         h->status = status;
         h->state  = HEADER_DONE;
@@ -1227,6 +1278,20 @@ cl_unrar_error_t unrar_skip_file(void *hArchive)
         return UNRAR_ERR;
     }
     unrar_dbgmsg("unrar_skip_file: File skipped.\n");
+    return UNRAR_OK;
+}
+
+cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint64_t deadline_usec)
+{
+    unrar_handle_t *h = (unrar_handle_t *)hArchive;
+
+    if (NULL == h) {
+        unrar_dbgmsg("unrar_set_skip_limits: Invalid arguments.\n");
+        return UNRAR_ERR;
+    }
+    h->skip_bytes_limited   = max_bytes != 0;
+    h->skip_bytes_left      = max_bytes;
+    h->skip_deadline_usec   = deadline_usec;
     return UNRAR_OK;
 }
 
