@@ -457,11 +457,10 @@ class TC(testcase.TestCase):
         assert 'runtime error' not in output.out + output.err
 
     def test_damaged_rar_2_0_data_is_not_extracted_as_intact(self):
-        self.step_name('Test RAR 2.0 / 2.6 data with one flipped byte is reported, not extracted as if it were intact')
+        self.step_name('Test RAR 2.0 / 2.6 data with one flipped byte never yields the intact entry')
 
-        if TC.backend == 'rarlab':
-            self.skipTest('unRAR hands over data whose checksum does not match, and it is scanned')
-
+        # Like unRAR, a damaged stream that still decodes is handed over and scanned
+        # without an error, and one that cannot be decoded keeps what came before.
         for archive in ('rar20-lz-text.rar', 'rar20-audio-1ch.rar', 'rar20-audio-4ch.rar',
                         'rar20-block-switches.rar', 'rar26-lz-audio.rar'):
             with self.subTest(archive=archive):
@@ -470,11 +469,14 @@ class TC(testcase.TestCase):
                 damaged = TC.path_tmp / ('damaged-' + archive)
                 damaged.write_bytes(data)
 
-                output = self.scan(damaged, '--debug')
-                assert output.ec == 0  # clean
-                text = output.out + output.err
-                assert ('RAR: Error extracting file' in text or 'Bad RAR file data' in text or
-                        'Truncated RAR file data' in text)
+                path_db = TC.path_tmp / ('damaged-' + archive + '.hsb')
+                path_db.write_text(''.join(
+                    '{}:{}:RAR_ENTRY_{}\n'.format(sha256, size, index)
+                    for index, (size, sha256) in enumerate(EXTRACTED[archive])))
+
+                output = self.scan(damaged, '--debug', path_db=path_db)
+                assert output.ec == 0  # clean: the damaged entry is not the intact one
+                assert 'runtime error' not in output.out + output.err
 
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
