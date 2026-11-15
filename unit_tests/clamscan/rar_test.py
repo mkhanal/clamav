@@ -37,6 +37,18 @@ EXTRACTED = {
         (11200, '6b7a6404e2e03a3e5fc8d512f3ac85c9a5f18f0b590011077840c829d44798c4')],
     'rar4-ppmd-e8.rar': [
         (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+    # RAR 2.0 and 2.6 compression, including multimedia (audio) blocks and
+    # solid streams.
+    'rar20-lz-text.rar': [
+        (20000, '8f026544474ace34d7c3c1744620611d32f9eb9d533521f948f1c9f75367538e')],
+    'rar20-audio-1ch.rar': [
+        (6000, 'ad1d689c1feca9b72b958fc9d07cf91b0c659ee4c6b1bc41b7b17f0f0fc2a9bf')],
+    'rar20-audio-4ch.rar': [
+        (6000, '081202b2c7e6e24cee2ffe0c106f2167f742d89bb8253bc96c8471d6e8e0d176')],
+    'rar20-block-switches.rar': [
+        (12000, '2e073b467b48ed65da8cc07906a96c4b069b1060808f2fe9c5c6a3183dde8000')],
+    'rar26-lz-audio.rar': [
+        (9998, 'f0bc83e91397965891393014c78cf130fa4a6265e9aa2e3d5fe5644e57018c9c')],
     # RAR5 filters.
     'rar5-filter-delta.rar': [
         (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
@@ -44,9 +56,8 @@ EXTRACTED = {
         (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
 }
 
-# RAR 1.5, 2.0 and 2.6 compression, including multimedia (audio) blocks and
-# solid streams, as RARLAB unRAR extracts it. The libarchive backend has no
-# decoder for it.
+# RAR 1.5 compression, as RARLAB unRAR extracts it. The libarchive backend has
+# no decoder for it.
 EXTRACTED_BY_UNRAR_ONLY = {
     'rar15-small.rar': [
         (302, '6905378fc71be9665755071e77d712963f14a9e3ccab8a62fb30d42023ba8947')],
@@ -57,20 +68,94 @@ EXTRACTED_BY_UNRAR_ONLY = {
     'rar15-rar20-solid.rar': [
         (4001, '0ae02de111812f78bede44113962aa88c9634ec3d6d087a4b5a06f6f22a10e2d'),
         (6000, '3a4be01ed3ebfe1169661947d6e0c690afd41d79bfd83a36187edc5c89ae323f')],
-    'rar20-lz-text.rar': [
-        (20000, '8f026544474ace34d7c3c1744620611d32f9eb9d533521f948f1c9f75367538e')],
-    'rar20-audio-1ch.rar': [
-        (6000, 'ad1d689c1feca9b72b958fc9d07cf91b0c659ee4c6b1bc41b7b17f0f0fc2a9bf')],
-    'rar20-audio-4ch.rar': [
-        (6000, '081202b2c7e6e24cee2ffe0c106f2167f742d89bb8253bc96c8471d6e8e0d176')],
-    'rar20-block-switches.rar': [
-        (12000, '2e073b467b48ed65da8cc07906a96c4b069b1060808f2fe9c5c6a3183dde8000')],
-    'rar20-solid.rar': [
-        (4000, '3b18236852cb7dd43d027e87b7e11ca793e4a608df15f09a9bbb5a119af652c3'),
-        (3000, '8733a7dae580602b5bbf2c199265f5bf884ea542618801372c1bd5ac7b03ac2c'),
-        (3500, '445ec62ce9e27c9f752dddc1d906350720012014261072dee5dc7cec435a0cd9')],
-    'rar26-lz-audio.rar': [
-        (9998, 'f0bc83e91397965891393014c78cf130fa4a6265e9aa2e3d5fe5644e57018c9c')],
+}
+
+# RARLAB RAR 2.50 for DOS archives: size and SHA-256 of every entry of 3 bytes or more,
+# as the RARLAB backend extracts it. Provenance and command lines: README.md.
+RAR_250 = {
+    'rar250-m3.rar': [
+        ('TEXT.TXT', 30000, 'ad04f3359e61af141c54b2ac82a53e01c43c525f653d317e0352ce87d9f72f32'),
+        ('S00.TXT', 19, 'caa269687e00dee0fd0c061aa3860dfcdc75c90229db2b93d2a5edcba639a3e8'),
+        ('S01.TXT', 1028, '711b45042255cd1101053800d87991c20e78cc00040a6f4b623162a1c43be097'),
+        ('S02.TXT', 2076, 'f18aeddb63f95eb3cba920265dde81fd8cdacf984d40e81e3bed9322103666ff'),
+        ('S03.TXT', 596, '28638542b2aa0649c3d2e23bb34171b6590cd77cfd23a2c965f277300093fb01'),
+        ('S04.TXT', 1639, 'c45822f85fce60efc6cfa973c31a32ed0b3903d58b8688c95d14be6a1b24a8e0'),
+        ('S05.TXT', 155, 'c2a9fcf3205dd032ffb938b09f686c98a374a625ea8bbcc8f9b0831467e0bb06'),
+        ('S06.TXT', 1185, '35b5787ea78e464309b02da9f1660015997d4073349a4210a97169f180b0cfcf'),
+    ],
+    'rar250-solid-m1.rar': [
+        ('TEXT.TXT', 30000, 'ad04f3359e61af141c54b2ac82a53e01c43c525f653d317e0352ce87d9f72f32'),
+        ('S00.TXT', 19, 'caa269687e00dee0fd0c061aa3860dfcdc75c90229db2b93d2a5edcba639a3e8'),
+        ('S01.TXT', 1028, '711b45042255cd1101053800d87991c20e78cc00040a6f4b623162a1c43be097'),
+        ('S02.TXT', 2076, 'f18aeddb63f95eb3cba920265dde81fd8cdacf984d40e81e3bed9322103666ff'),
+        ('S03.TXT', 596, '28638542b2aa0649c3d2e23bb34171b6590cd77cfd23a2c965f277300093fb01'),
+        ('S04.TXT', 1639, 'c45822f85fce60efc6cfa973c31a32ed0b3903d58b8688c95d14be6a1b24a8e0'),
+        ('S05.TXT', 155, 'c2a9fcf3205dd032ffb938b09f686c98a374a625ea8bbcc8f9b0831467e0bb06'),
+        ('S06.TXT', 1185, '35b5787ea78e464309b02da9f1660015997d4073349a4210a97169f180b0cfcf'),
+    ],
+    'rar250-solid-m2.rar': [
+        ('TEXT.TXT', 30000, 'ad04f3359e61af141c54b2ac82a53e01c43c525f653d317e0352ce87d9f72f32'),
+        ('S00.TXT', 19, 'caa269687e00dee0fd0c061aa3860dfcdc75c90229db2b93d2a5edcba639a3e8'),
+        ('S01.TXT', 1028, '711b45042255cd1101053800d87991c20e78cc00040a6f4b623162a1c43be097'),
+        ('S02.TXT', 2076, 'f18aeddb63f95eb3cba920265dde81fd8cdacf984d40e81e3bed9322103666ff'),
+        ('S03.TXT', 596, '28638542b2aa0649c3d2e23bb34171b6590cd77cfd23a2c965f277300093fb01'),
+        ('S04.TXT', 1639, 'c45822f85fce60efc6cfa973c31a32ed0b3903d58b8688c95d14be6a1b24a8e0'),
+        ('S05.TXT', 155, 'c2a9fcf3205dd032ffb938b09f686c98a374a625ea8bbcc8f9b0831467e0bb06'),
+        ('S06.TXT', 1185, '35b5787ea78e464309b02da9f1660015997d4073349a4210a97169f180b0cfcf'),
+    ],
+    'rar250-solid-m3.rar': [
+        ('TEXT.TXT', 30000, 'ad04f3359e61af141c54b2ac82a53e01c43c525f653d317e0352ce87d9f72f32'),
+        ('S00.TXT', 19, 'caa269687e00dee0fd0c061aa3860dfcdc75c90229db2b93d2a5edcba639a3e8'),
+        ('S01.TXT', 1028, '711b45042255cd1101053800d87991c20e78cc00040a6f4b623162a1c43be097'),
+        ('S02.TXT', 2076, 'f18aeddb63f95eb3cba920265dde81fd8cdacf984d40e81e3bed9322103666ff'),
+        ('S03.TXT', 596, '28638542b2aa0649c3d2e23bb34171b6590cd77cfd23a2c965f277300093fb01'),
+        ('S04.TXT', 1639, 'c45822f85fce60efc6cfa973c31a32ed0b3903d58b8688c95d14be6a1b24a8e0'),
+        ('S05.TXT', 155, 'c2a9fcf3205dd032ffb938b09f686c98a374a625ea8bbcc8f9b0831467e0bb06'),
+        ('S06.TXT', 1185, '35b5787ea78e464309b02da9f1660015997d4073349a4210a97169f180b0cfcf'),
+    ],
+    'rar250-solid-m5.rar': [
+        ('TEXT.TXT', 30000, 'ad04f3359e61af141c54b2ac82a53e01c43c525f653d317e0352ce87d9f72f32'),
+        ('S00.TXT', 19, 'caa269687e00dee0fd0c061aa3860dfcdc75c90229db2b93d2a5edcba639a3e8'),
+        ('S01.TXT', 1028, '711b45042255cd1101053800d87991c20e78cc00040a6f4b623162a1c43be097'),
+        ('S02.TXT', 2076, 'f18aeddb63f95eb3cba920265dde81fd8cdacf984d40e81e3bed9322103666ff'),
+        ('S03.TXT', 596, '28638542b2aa0649c3d2e23bb34171b6590cd77cfd23a2c965f277300093fb01'),
+        ('S04.TXT', 1639, 'c45822f85fce60efc6cfa973c31a32ed0b3903d58b8688c95d14be6a1b24a8e0'),
+        ('S05.TXT', 155, 'c2a9fcf3205dd032ffb938b09f686c98a374a625ea8bbcc8f9b0831467e0bb06'),
+        ('S06.TXT', 1185, '35b5787ea78e464309b02da9f1660015997d4073349a4210a97169f180b0cfcf'),
+    ],
+    'rar250-solid-mm.rar': [
+        ('MONO8.WAV', 24000, 'bd2bef53c0e089b2be0c4f17665cfe62f6b493edaa529fb3e4577351a8ef601d'),
+        ('QUAD.RAW', 20000, 'f4c3c4e77735bad89fd780401e5c7028a7762aaf52ca20c8914ebe40ba49ca08'),
+        ('S01.TXT', 1028, '711b45042255cd1101053800d87991c20e78cc00040a6f4b623162a1c43be097'),
+        ('S02.TXT', 2076, 'f18aeddb63f95eb3cba920265dde81fd8cdacf984d40e81e3bed9322103666ff'),
+        ('RAND.BIN', 12000, '0bb8ce60776d61f4e23c42ef81b8ea60a08fe60d06d582aebd93b0bb7d7cf90a'),
+    ],
+    'rar250-mm-m5.rar': [
+        ('MONO8.WAV', 24000, 'bd2bef53c0e089b2be0c4f17665cfe62f6b493edaa529fb3e4577351a8ef601d'),
+        ('QUAD.RAW', 20000, 'f4c3c4e77735bad89fd780401e5c7028a7762aaf52ca20c8914ebe40ba49ca08'),
+        ('TEXT.TXT', 30000, 'ad04f3359e61af141c54b2ac82a53e01c43c525f653d317e0352ce87d9f72f32'),
+    ],
+    'rar250-solid-small.rar': [
+        ('S01.TXT', 1028, '711b45042255cd1101053800d87991c20e78cc00040a6f4b623162a1c43be097'),
+        ('S02.TXT', 2076, 'f18aeddb63f95eb3cba920265dde81fd8cdacf984d40e81e3bed9322103666ff'),
+        ('S03.TXT', 596, '28638542b2aa0649c3d2e23bb34171b6590cd77cfd23a2c965f277300093fb01'),
+        ('S04.TXT', 1639, 'c45822f85fce60efc6cfa973c31a32ed0b3903d58b8688c95d14be6a1b24a8e0'),
+    ],
+    'rar250-solid-volumes.rar': [
+        ('RAND.BIN', 12000, '0bb8ce60776d61f4e23c42ef81b8ea60a08fe60d06d582aebd93b0bb7d7cf90a'),
+        ('TEXT.TXT', 30000, 'ad04f3359e61af141c54b2ac82a53e01c43c525f653d317e0352ce87d9f72f32'),
+        ('S00.TXT', 19, 'caa269687e00dee0fd0c061aa3860dfcdc75c90229db2b93d2a5edcba639a3e8'),
+        ('S01.TXT', 1028, '711b45042255cd1101053800d87991c20e78cc00040a6f4b623162a1c43be097'),
+        ('S02.TXT', 2076, 'f18aeddb63f95eb3cba920265dde81fd8cdacf984d40e81e3bed9322103666ff'),
+        ('S03.TXT', 596, '28638542b2aa0649c3d2e23bb34171b6590cd77cfd23a2c965f277300093fb01'),
+        ('S04.TXT', 1639, 'c45822f85fce60efc6cfa973c31a32ed0b3903d58b8688c95d14be6a1b24a8e0'),
+        ('S05.TXT', 155, 'c2a9fcf3205dd032ffb938b09f686c98a374a625ea8bbcc8f9b0831467e0bb06'),
+        ('S06.TXT', 1185, '35b5787ea78e464309b02da9f1660015997d4073349a4210a97169f180b0cfcf'),
+    ],
+    'rar250-split.rar': [
+        ('MONO8.WAV', 24000, 'bd2bef53c0e089b2be0c4f17665cfe62f6b493edaa529fb3e4577351a8ef601d'),
+        ('S01.TXT', 1028, '711b45042255cd1101053800d87991c20e78cc00040a6f4b623162a1c43be097'),
+    ],
 }
 
 
@@ -118,7 +203,7 @@ class TC(testcase.TestCase):
         return self.execute_command(command)
 
     def test_every_compression_version_and_filter_extracts_exactly(self):
-        self.step_name('Test RAR 2.9 filters and RAR5 filters extract byte for byte')
+        self.step_name('Test RAR 2.0 / 2.6 compression, RAR 2.9 filters and RAR5 filters extract byte for byte')
 
         for archive, entries in EXTRACTED.items():
             with self.subTest(archive=archive):
@@ -133,8 +218,8 @@ class TC(testcase.TestCase):
                 self.verify_output(output.out, expected=[
                     'RAR_ENTRY_{}.UNOFFICIAL FOUND'.format(index) for index in range(len(entries))])
 
-    def test_compression_before_rar_2_9_is_extracted_by_unrar_only(self):
-        self.step_name('Test RAR 1.5, 2.0 and 2.6 entries: extracted by unRAR, an extraction error without it')
+    def test_rar_1_5_compression_is_extracted_by_unrar_only(self):
+        self.step_name('Test RAR 1.5 entries: extracted by unRAR, an extraction error without it')
 
         for archive, entries in EXTRACTED_BY_UNRAR_ONLY.items():
             with self.subTest(archive=archive):
@@ -344,6 +429,54 @@ class TC(testcase.TestCase):
                 assert output.ec == 0  # clean
                 assert 'RAR: No more files in archive' in output.out + output.err
                 assert 'reading file header' not in output.out + output.err
+
+    def test_rar_2_50_archives_extract_exactly(self):
+        self.step_name('Test archives written by RAR 2.50 extract byte for byte, solid or not, in every method')
+
+        for archive, entries in RAR_250.items():
+            with self.subTest(archive=archive):
+                path_db = TC.path_tmp / (archive + '.hsb')
+                path_db.write_text(''.join(
+                    '{}:{}:RAR250_{}\n'.format(sha256, size, name.replace('.', '_'))
+                    for name, size, sha256 in entries))
+
+                output = self.scan(TC.path_rar / archive, '--allmatch', path_db=path_db)
+
+                assert output.ec == 1  # virus
+                self.verify_output(output.out, expected=[
+                    'RAR250_{}.UNOFFICIAL FOUND'.format(name.replace('.', '_')) for name, _, _ in entries])
+                assert 'RAR: Error extracting file' not in output.out + output.err
+
+    def test_solid_entry_with_an_oversized_unpacked_size_is_rejected_without_overflow(self):
+        self.step_name('Test a solid RAR 2.0 entry declaring an unpacked size near INT64_MAX is rejected cleanly')
+
+        testfile = TC.path_rar / 'rar250-solid-size-overflow.rar'
+        output = self.scan(testfile, '--debug')
+
+        assert output.ec in (0, 1)
+        assert 'runtime error' not in output.out + output.err
+
+    def test_damaged_rar_2_0_data_is_not_extracted_as_intact(self):
+        self.step_name('Test RAR 2.0 / 2.6 data with one flipped byte never yields the intact entry')
+
+        # Like unRAR, a damaged stream that still decodes is handed over and scanned
+        # without an error, and one that cannot be decoded keeps what came before.
+        for archive in ('rar20-lz-text.rar', 'rar20-audio-1ch.rar', 'rar20-audio-4ch.rar',
+                        'rar20-block-switches.rar', 'rar26-lz-audio.rar'):
+            with self.subTest(archive=archive):
+                data = bytearray((TC.path_rar / archive).read_bytes())
+                data[len(data) // 2] ^= 0x01
+                damaged = TC.path_tmp / ('damaged-' + archive)
+                damaged.write_bytes(data)
+
+                path_db = TC.path_tmp / ('damaged-' + archive + '.hsb')
+                path_db.write_text(''.join(
+                    '{}:{}:RAR_ENTRY_{}\n'.format(sha256, size, index)
+                    for index, (size, sha256) in enumerate(EXTRACTED[archive])))
+
+                output = self.scan(damaged, '--debug', path_db=path_db)
+                assert output.ec == 0  # clean: the damaged entry is not the intact one
+                assert 'runtime error' not in output.out + output.err
 
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')

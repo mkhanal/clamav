@@ -1,6 +1,7 @@
 # order<TAB>slug<TAB>kind<TAB>title<TAB>ERE matched against the commit subject; the first matching line owns the commit.
 # kind patch: shipped as clamcove-<version>-<order>-<slug>.patch; kind none: CI, tests and tooling, not shipped as a patch.
 # A commit between the upstream tag and the release tag that matches no line fails the release job.
+07	rar20-decoder	patch	RAR 2.0 and 2.6 decoder for libarchive, ported from rardecode (BSD-2-Clause)	^libclamarchive: (Decode RAR 2\.0|Remove the RAR 2\.0|Read the block header of an empty entry in a solid RAR 2\.0|Clamp the end of a RAR 2\.0)
 01	libarchive-rar	patch	RAR read through vendored libarchive instead of RARLAB unRAR (ENABLE_UNRAR_LIBARCHIVE)	^(libclamarchive|libclamunrar_iface|rar): |^unit_tests: Test RAR
 03	pcre-container-check	patch	Container constraint of a logical signature checked before its PCRE subsignatures run	^libclamav: Skip PCRE
 04	incomplete-rar-alert	patch	Opt-in alert for RAR archives that could not be fully extracted and scanned	[Ii]ncomplete[- ]RAR|^libclamav: Add an opt-in alert for a RAR archive

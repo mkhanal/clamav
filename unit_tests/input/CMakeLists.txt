@@ -63,13 +63,9 @@ set(ENCRYPTED_TESTFILES
 
 if(ENABLE_UNRAR)
     set(ENCRYPTED_TESTFILES ${ENCRYPTED_TESTFILES}
+        clamav_hdb_scanfiles/clam-v2.rar
         clamav_hdb_scanfiles/clam-v3.rar
     )
-    if(NOT ENABLE_UNRAR_LIBARCHIVE)
-        set(ENCRYPTED_TESTFILES ${ENCRYPTED_TESTFILES}
-            clamav_hdb_scanfiles/clam-v2.rar
-        )
-    endif()
 endif()
 
 add_custom_target(tgt_build_unit_tests_directories ALL
