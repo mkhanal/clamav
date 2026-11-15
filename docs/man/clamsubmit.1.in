@@ -1,4 +1,4 @@
-.TH "File submission tool" "1" "March 20, 2014" "ClamAV @VERSION@" "Clam AntiVirus"
+.TH "File submission tool" "1" "March 20, 2014" "ClamCove @CLAMCOVE_VERSION@" "Clam AntiVirus"
 .SH "NAME"
 .LP
 clamsubmit \- File submission utility for ClamAV

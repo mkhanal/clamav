@@ -27,6 +27,8 @@ include(Version)
 
 set(PACKAGE_NAME      "${PROJECT_NAME}")
 set(PACKAGE_VERSION   "${PROJECT_VERSION}")
+set(CLAMCOVE_RELEASE  "1" CACHE STRING "ClamCove distribution release number appended to the ClamAV version")
+set(CLAMCOVE_VERSION  "${PROJECT_VERSION}${VERSION_SUFFIX}.${CLAMCOVE_RELEASE}")
 set(PACKAGE_STRING    "${PROJECT_NAME} ${PROJECT_VERSION}${VERSION_SUFFIX}")
 set(PACKAGE_BUGREPORT "https://github.com/Cisco-Talos/clamav/issues")
 set(PACKAGE_URL       "https://www.clamav.net/")
@@ -326,7 +328,7 @@ endif()
 #  - for source tarball
 #
 
-set(CPACK_PACKAGE_NAME ${PACKAGE_STRING})
+set(CPACK_PACKAGE_NAME ClamCove)
 
 #set(CPACK_PACKAGE_ICON ${PROJECT_SOURCE_DIR}/logo.png)
 #set(CPACK_PACKAGE_RELOCATABLE TRUE)
@@ -335,14 +337,15 @@ set(CPACK_STRIP_FILES TRUE)
 set(CPACK_PACKAGE_VERSION_MAJOR ${CLAMAV_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${CLAMAV_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${CLAMAV_VERSION_PATCH})
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})
+set(CPACK_PACKAGE_VENDOR ClamCove)
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "ClamCove, a drop-in distribution of ClamAV: ${PROJECT_DESCRIPTION}")
 set(CPACK_PACKAGE_CONTACT https://www.clamav.net/)
 
 # point to readme and license files
 set(CPACK_RESOURCE_FILE_README ${PROJECT_SOURCE_DIR}/README.md)
 set(CPACK_RESOURCE_FILE_LICENSE ${PROJECT_SOURCE_DIR}/COPYING.txt)
 
-set(CPACK_PACKAGE_FILE_NAME clamav-${PROJECT_VERSION}${VERSION_SUFFIX})
+set(CPACK_PACKAGE_FILE_NAME clamcove-${CLAMCOVE_VERSION})
 
 set(CPACK_SOURCE_GENERATOR "TGZ")
 set(CPACK_SOURCE_PACKAGE_FILE_NAME ${CPACK_PACKAGE_FILE_NAME})
@@ -354,7 +357,6 @@ if (WIN32)
     include(InstallRequiredSystemLibraries)
 
     set(CPACK_GENERATOR                  "ZIP;WIX")
-    set(CPACK_PACKAGE_VENDOR             "Cisco Systems, Inc.")
     set(CPACK_PACKAGE_FILE_NAME ${CPACK_PACKAGE_FILE_NAME}.win.${CMAKE_VS_PLATFORM_NAME})
 
     NumberToHex(${PROJECT_VERSION_MAJOR} HEX_MAJOR)
@@ -376,10 +378,9 @@ if (WIN32)
         DESTINATION ".")
 
 elseif(APPLE)
-    set(CPACK_PACKAGE_NAME      ClamAV)
     set(CPACK_GENERATOR         productbuild)
     set(CPACK_PACKAGE_FILE_NAME ${CPACK_PACKAGE_FILE_NAME}.macos.universal)
-    set(CPACK_PACKAGE_VENDOR    "cisco")  # For Apple, creates short name com.cisco.clamav.xxx in pkgutil
+    set(CPACK_PACKAGE_VENDOR    "clamcove")  # For Apple, creates short name com.clamcove.clamcove.xxx in pkgutil
 
     # productbuild requires components or it won't add anything to the PKG
     set(CPACK_COMPONENT_LIBRARIES_DISPLAY_NAME "Libraries")
@@ -438,7 +439,7 @@ elseif(APPLE)
 elseif(C_BSD)
     # User must specify `-G FreeBSD` when building FreeBSD packages
     # Disclaimer: doesn't seem to actually exist, despite being in the documentation.
-    set(CPACK_PACKAGE_NAME             clamav)
+    set(CPACK_PACKAGE_NAME             clamcove)
     set(CPACK_PACKAGE_FILE_NAME        ${CPACK_PACKAGE_FILE_NAME}.freebsd.${CMAKE_SYSTEM_PROCESSOR})
 
     set(CPACK_FREEBSD_PACKAGE_LICENSE "GPLv2")
@@ -446,8 +447,16 @@ elseif(C_BSD)
 
 else()
     # User must specify `-G DEB` or `-G RPM` when building Linux packages
-    set(CPACK_PACKAGE_NAME             clamav)
-    set(CPACK_PACKAGE_VERSION          ${PROJECT_VERSION}${VERSION_SUFFIX})
+    set(CPACK_PACKAGE_NAME             clamcove)
+    set(CPACK_PACKAGE_VERSION          ${CLAMCOVE_VERSION})
+    set(CPACK_DEBIAN_PACKAGE_RELEASE   ${CLAMCOVE_RELEASE})
+    set(CPACK_RPM_PACKAGE_RELEASE      ${CLAMCOVE_RELEASE})
+    set(CPACK_DEBIAN_PACKAGE_PROVIDES  clamav)
+    set(CPACK_DEBIAN_PACKAGE_CONFLICTS clamav)
+    set(CPACK_DEBIAN_PACKAGE_REPLACES  clamav)
+    set(CPACK_RPM_PACKAGE_PROVIDES     clamav)
+    set(CPACK_RPM_PACKAGE_CONFLICTS    clamav)
+    set(CPACK_RPM_PACKAGE_OBSOLETES    clamav)
     set(CPACK_PACKAGE_FILE_NAME        ${CPACK_PACKAGE_FILE_NAME}.linux.${CMAKE_SYSTEM_PROCESSOR})
 
     set(CPACK_RPM_PACKAGE_LICENSE "GPLv2")

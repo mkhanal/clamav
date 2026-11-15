@@ -5,5 +5,5 @@
 03	pcre-container-check	patch	Container constraint of a logical signature checked before its PCRE subsignatures run	^libclamav: Skip PCRE
 04	incomplete-rar-alert	patch	Opt-in alert for RAR archives that could not be fully extracted and scanned	[Ii]ncomplete[- ]RAR|^libclamav: Add an opt-in alert for a RAR archive
 99	ci-and-tests	none	CI, tests and tooling	^(ci|test|tests|tools|fuzz|docs|build)[:(/]
-05	clamcove-naming	patch	ClamCove version string, README and NOTICE	ClamCove|^(version|notice|readme): 
+05	clamcove-naming	patch	ClamCove version string, README and NOTICE	ClamCove|^(version|notice|readme): |^Version as 
 06	windows-build-fixes	patch	Windows with vcpkg: OpenSSL library directory taken from the release file of a per-configuration list, RAR test output matched by file name	^(libclamav_rust: Take OpenSSL|Windows: )
