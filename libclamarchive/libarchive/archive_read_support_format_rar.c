@@ -369,6 +369,7 @@ struct rar
   /* PPMd Variant H members */
   char ppmd_valid;
   char ppmd_eod;
+  int decode_error;
   char is_ppmd_block;
   int ppmd_escape;
   CPpmd7 ppmd7_context;
@@ -2111,6 +2112,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   rar->unp_offset = 0;
   rar->unp_buffer_size = UNP_BUFFER_SIZE;
   rar->ppmd_eod = 0;
+  rar->decode_error = 0;
 
   archive_entry_set_mtime(entry, rar->mtime, rar->mnsec);
   archive_entry_set_ctime(entry, rar->ctime, rar->cnsec);
@@ -2371,7 +2373,7 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
   int ret = (ARCHIVE_OK);
 
   do {
-    if (!rar->valid)
+    if (!rar->valid && rar->decode_error == 0)
       return (ARCHIVE_FAILED);
 
     if (rar->filters.bytes_ready > 0)
@@ -2398,6 +2400,28 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
         rar->filters.bytes += *size;
       }
       goto ending_block;
+    }
+
+    if (rar->decode_error != 0 && rar->bytes_uncopied == 0)
+    {
+      /*
+       * Decoding stopped on damaged data after the bytes still held in the
+       * window were handed over: report the error now.
+       */
+      if (rar->unp_offset > 0) {
+        *buff = rar->unp_buffer;
+        *size = rar->unp_offset;
+        *offset = rar->offset_outgoing;
+        rar->offset_outgoing += *size;
+        rar->crc_calculated = __archive_crc32(rar->crc_calculated, *buff,
+          (unsigned)*size);
+        rar->unp_offset = 0;
+        return (ARCHIVE_OK);
+      }
+      ret = rar->decode_error;
+      rar->decode_error = 0;
+      rar->entry_eof = 1;
+      return (ret);
     }
 
     if ((rar->ppmd_eod && rar->bytes_uncopied == 0) ||
@@ -2499,8 +2523,20 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
       }
 
       ret = expand(a, &end);
-      if (ret != ARCHIVE_OK)
-        return (ret);
+      if (ret != ARCHIVE_OK) {
+        /*
+         * Keep what was decoded before the damage, as unRAR does: hand
+         * it over first, then report the error.
+         */
+        if (ret < ARCHIVE_WARN && ret != ARCHIVE_FATAL &&
+            rar->decode_error == 0 && lzss_position(&rar->lzss) > start &&
+            lzss_position(&rar->lzss) <= rar->filters.filterstart) {
+          rar->decode_error = ret;
+          end = lzss_position(&rar->lzss);
+          ret = ARCHIVE_OK;
+        } else
+          return (ret);
+      }
 
       rar->bytes_uncopied = end - start;
       rar->filters.lastend = end;
