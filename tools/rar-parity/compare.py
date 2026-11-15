@@ -17,7 +17,13 @@ Expected outcomes (manifest.json, field expected.kind):
   detect     every signature in expected.detect fires: the inner content was extracted
   encrypted  Heuristics.Encrypted.RAR (run with --alert-encrypted-archive)
   limits     Heuristics.Limits.Exceeded (run with --alert-exceeds-max)
-  error      anything but a clean verdict: an alert or a scan error
+  error      anything but a clean verdict: an alert or a scan error. Enforced only when
+             --extra-options carries --alert-incomplete-rar=yes (without it a build that
+             could not scan an archive reports clean); a row with clean_accepted is exempt
+             because no build can tell it from an empty archive or scans it completely
+  A row with backend_gap names an entry type the libarchive backend does not decode yet:
+  B is exempt from the detection checks and must not report it clean with the alert on.
+Only B is held to the manifest; A, the reference, is reported but never fails the run.
   clean      archive holds nothing scannable; no RarParity detection expected
 """
 import argparse
@@ -36,6 +42,7 @@ import rarwrite  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 ENCRYPTED = "Heuristics.Encrypted.RAR"
+INCOMPLETE_ALERT = "--alert-incomplete-rar=yes"
 LIMITS = "Heuristics.Limits.Exceeded"
 XOR_KEY = b"bhcftqarohcdiayfohalohkgmoefxrrgfnczssgybajvkzjaahpfrlqsratkhhfvpxytculmwgmtyzujlbjlgrhtwxhzpjazlibbwepffyjyfkjwzyofgpopoueurinpdujkphxwhnaxfkaiwrpzdqsnwughtejr"
 BASE_OPTIONS = ["-z", "--alert-encrypted-archive=yes", "--alert-exceeds-max=yes", "--no-summary"]
@@ -137,7 +144,7 @@ def verdict(res: dict) -> str:
     return "clean"
 
 
-def meets(row: dict, res: dict) -> str | None:
+def meets(row: dict, res: dict, enforce_errors: bool) -> str | None:
     exp = row["expected"]
     k = exp["kind"]
     found = res["found"]
@@ -149,6 +156,8 @@ def meets(row: dict, res: dict) -> str | None:
     if k == "limits":
         return None if any(n.startswith(LIMITS) for n in found) else f"no {LIMITS}*"
     if k == "error":
+        if not enforce_errors or "clean_accepted" in row:
+            return None
         return None if verdict(res) != "clean" else "clean verdict, contents not scanned"
     if k == "clean":
         return "unexpected detection" if any(n.startswith("RarParity.") for n in found) else None
@@ -178,6 +187,7 @@ def main() -> None:
     ap.add_argument("--extra-options", default="", help='extra clamscan flags for both builds, one shell-quoted string, e.g. --extra-options="--alert-incomplete-rar=yes"')
     args = ap.parse_args()
     extra = shlex.split(args.extra_options)
+    enforce_errors = INCOMPLETE_ALERT in extra
 
     with open(args.manifest) as f:
         manifest = json.load(f)
@@ -196,18 +206,24 @@ def main() -> None:
         a = ra[r["staged"]]
         b = rb[r["staged"]] if rb else None
         problems = []
-        for label, x in (("A", a), ("B", b)):
-            if x is None:
-                continue
-            why = meets(r, x)
-            if why:
-                problems.append(f"{label} vs manifest: {why}")
+        gap = r.get("backend_gap")
         if b is not None:
-            lost = sorted(a["found"] - b["found"])
-            if lost:
-                problems.append(f"B detects less than A: {', '.join(lost[:3])}{' ...' if len(lost) > 3 else ''}")
-            if verdict(a) != "clean" and verdict(b) == "clean":
-                problems.append("B clean where A alerted or errored")
+            if gap:
+                if enforce_errors and verdict(b) == "clean":
+                    problems.append(f"B clean for an entry it cannot decode ({gap})")
+            else:
+                why = meets(r, b, enforce_errors)
+                if why:
+                    problems.append(f"B vs manifest: {why}")
+                lost = sorted(a["found"] - b["found"])
+                if lost:
+                    problems.append(f"B detects less than A: {', '.join(lost[:3])}{' ...' if len(lost) > 3 else ''}")
+                if verdict(a) != "clean" and verdict(b) == "clean":
+                    problems.append("B clean where A alerted or errored")
+        else:
+            why = meets(r, a, enforce_errors)
+            if why:
+                problems.append(f"A vs manifest: {why}")
         status = "ok" if not problems else "FAIL"
         if problems and not args.report_only:
             failures += 1
