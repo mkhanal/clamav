@@ -1,29 +1,34 @@
 # ClamCove
 
-ClamCove is a distribution of [ClamAV](https://www.clamav.net/) 1.5.4 whose
-builds contain no RARLAB unRAR code. It is a drop-in replacement for ClamAV:
-commands, configuration files, library names and sonames, install paths, the
-signature database format and mirrors, the clamd protocol, exit codes and
-output formats are ClamAV's. Only the version output differs, and the
-ClamAV version comes first and unchanged:
+ClamCove is a fork of [ClamAV](https://github.com/Cisco-Talos/clamav), the
+open source antivirus engine. It is versioned on ClamAV's version:
+`ClamCove <clamav version>-<n>`, so ClamCove 1.5.4-1 is ClamAV 1.5.4 plus
+ClamCove release 1.
 
-```
-ClamAV 1.5.4 (ClamCove 1.5.4-1)
-```
+ClamCove is a drop-in replacement for ClamAV: the same commands, configuration
+files, libraries, install paths and signature database. Its aim is to get every
+change it makes accepted into ClamAV, so that it shrinks back to ClamAV.
+
+## Differences from ClamAV
+
+| Difference | ClamAV 1.5.4 | ClamCove | Upstream status |
+| --- | --- | --- | --- |
+| PCRE container check | PCRE subsignatures are evaluated whatever the container | PCRE subsignatures whose container cannot match are skipped | [Cisco-Talos/clamav#1886](https://github.com/Cisco-Talos/clamav/issues/1886), open |
+| RAR read through libarchive | RAR read by RARLAB unRAR code | RAR read through libarchive, optional build, no RARLAB code ([#7](https://github.com/mkhanal/clamcove/pull/7)) | Not yet offered |
+| Alert on an incomplete RAR | A RAR that cannot be fully scanned reports clean | Opt-in `AlertIncompleteRAR` / `--alert-incomplete-rar` raises `Heuristics.Incomplete.RAR` ([#11](https://github.com/mkhanal/clamcove/pull/11)) | Not yet offered |
+| RAR 1.5 archives | Extracted by unRAR | Not extracted in the libarchive build; alerts when the option above is on, because the only description of the format is unRAR's source | Not yet offered (part of #7) |
+| Version output | `ClamAV 1.5.4/...` | `ClamAV 1.5.4/... (ClamCove 1.5.4-1)`, ClamAV's version first and unchanged ([#13](https://github.com/mkhanal/clamcove/pull/13)) | ClamCove only, never offered |
+| freshclam User-Agent | `ClamAV/1.5.4 (OS: ...)` | Unchanged | None needed |
+
+Rows for pull requests that are not merged yet describe the release they ship
+in.
 
 ClamCove is based on ClamAV by Cisco Systems, Inc. ClamAV is a trademark of
 Cisco. ClamCove is not affiliated with or endorsed by Cisco or the ClamAV
 project. ClamCove is licensed under the GNU General Public License, version 2
-(see [COPYING](COPYING)).
+(see [COPYING](COPYING)). See [NOTICE](NOTICE) for the full statement.
 
-What differs from upstream ClamAV 1.5.4:
-
-- RAR archives are read through libarchive instead of RARLAB unRAR code.
-- PCRE subsignatures are skipped when the container cannot match.
-- An alert is raised for an incomplete RAR archive.
-
-See [NOTICE](NOTICE) for the full statement. The rest of this file is
-ClamAV's own README.
+The rest of this file is ClamAV's own README.
 
 # ClamAV
 

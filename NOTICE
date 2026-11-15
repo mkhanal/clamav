@@ -10,12 +10,8 @@ ClamCove is licensed under the GNU General Public License, version 2, as is
 ClamAV; see COPYING. Third-party components keep their own licences; see
 COPYING/ and COPYING.txt.
 
-Differences from upstream ClamAV 1.5.4:
-
-- Builds contain no RARLAB unRAR code. RAR archives are read through
-  libarchive.
-- PCRE subsignatures are skipped when the container cannot match.
-- An alert is raised for an incomplete RAR archive.
+The differences from upstream ClamAV 1.5.4, each with its upstream status, are
+listed in the table at the top of README.md.
 
 Version output carries the ClamAV version first and unchanged, followed by the
 distribution: "ClamAV 1.5.4 (ClamCove 1.5.4-1)". The distribution release
