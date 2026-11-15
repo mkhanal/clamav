@@ -284,6 +284,7 @@ struct comp_state {
 	                                decompression. */
 	size_t window_alloc;         /* Size window_buf was allocated with. */
 	uint8_t* filtered_buf;       /* Buffer used when applying filters. */
+	size_t filtered_alloc;       /* Size filtered_buf was allocated with. */
 	const uint8_t* block_buf;    /* Buffer used when merging blocks. */
 	ssize_t window_mask;         /* Convenience field; window_size - 1. */
 	int64_t write_ptr;           /* This amount of data has been unpacked
@@ -742,14 +743,23 @@ static int run_arm_filter(struct rar5 *rar5, struct filter_info* flt) {
 	return ARCHIVE_OK;
 }
 
+static void free_filtered_buf(struct rar5 *rar5) {
+	__archive_rar_window_free(rar5->cstate.filtered_buf,
+	    rar5->cstate.filtered_alloc);
+	rar5->cstate.filtered_buf = NULL;
+	rar5->cstate.filtered_alloc = 0;
+}
+
 static int run_filter(struct archive_read* a, struct filter_info* flt) {
 	struct rar5 *rar5 = a->format->data;
 	int ret;
 
 	clear_data_ready_stack(rar5);
-	free(rar5->cstate.filtered_buf);
+	free_filtered_buf(rar5);
 
-	rar5->cstate.filtered_buf = malloc(flt->block_length);
+	rar5->cstate.filtered_buf = __archive_rar_window_alloc(
+	    (size_t) flt->block_length, rar5->window_dir);
+	rar5->cstate.filtered_alloc = (size_t) flt->block_length;
 	if(!rar5->cstate.filtered_buf) {
 		archive_set_error(&a->archive, ENOMEM,
 		    "Can't allocate memory for filter data");
@@ -1690,12 +1700,13 @@ static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
 	const uint64_t keep = rar5_min(written, old_size);
 	uint8_t* window_buf = __archive_rar_window_alloc((size_t) window_size,
 	    rar5->window_dir);
-	uint8_t* filtered_buf = calloc(1, (size_t) window_size);
+	uint8_t* filtered_buf = __archive_rar_window_alloc((size_t) window_size,
+	    rar5->window_dir);
 	uint64_t pos;
 
 	if(window_buf == NULL || filtered_buf == NULL) {
 		__archive_rar_window_free(window_buf, (size_t) window_size);
-		free(filtered_buf);
+		__archive_rar_window_free(filtered_buf, (size_t) window_size);
 		return "Not enough memory for the window of this entry";
 	}
 
@@ -1706,10 +1717,11 @@ static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
 	clear_data_ready_stack(rar5);
 	__archive_rar_window_free(rar5->cstate.window_buf,
 	    rar5->cstate.window_alloc);
-	free(rar5->cstate.filtered_buf);
+	free_filtered_buf(rar5);
 	rar5->cstate.window_buf = window_buf;
 	rar5->cstate.window_alloc = (size_t) window_size;
 	rar5->cstate.filtered_buf = filtered_buf;
+	rar5->cstate.filtered_alloc = (size_t) window_size;
 	return NULL;
 }
 
@@ -2603,27 +2615,28 @@ static int init_unpack(struct rar5 *rar5) {
 
 	__archive_rar_window_free(rar5->cstate.window_buf,
 	    rar5->cstate.window_alloc);
-	free(rar5->cstate.filtered_buf);
+	free_filtered_buf(rar5);
 
 	rar5->cstate.window_buf = NULL;
 	rar5->cstate.window_alloc = 0;
-	rar5->cstate.filtered_buf = NULL;
 
 	if(rar5->cstate.window_size > 0) {
 		const size_t window_size = (size_t) rar5->cstate.window_size;
 		uint8_t* window_buf = __archive_rar_window_alloc(window_size,
 		    rar5->window_dir);
-		uint8_t* filtered_buf = calloc(1, window_size);
+		uint8_t* filtered_buf = __archive_rar_window_alloc(window_size,
+		    rar5->window_dir);
 
 		if(window_buf == NULL || filtered_buf == NULL) {
 			__archive_rar_window_free(window_buf, window_size);
-			free(filtered_buf);
+			__archive_rar_window_free(filtered_buf, window_size);
 			return ARCHIVE_FAILED;
 		}
 
 		rar5->cstate.window_buf = window_buf;
 		rar5->cstate.window_alloc = window_size;
 		rar5->cstate.filtered_buf = filtered_buf;
+		rar5->cstate.filtered_alloc = window_size;
 	}
 
 	clear_data_ready_stack(rar5);
@@ -4581,7 +4594,7 @@ static int rar5_cleanup(struct archive_read *a) {
 
 	__archive_rar_window_free(rar5->cstate.window_buf,
 	    rar5->cstate.window_alloc);
-	free(rar5->cstate.filtered_buf);
+	free_filtered_buf(rar5);
 	free(rar5->window_dir);
 	clear_data_ready_stack(rar5);
 

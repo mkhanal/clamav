@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "archive_rar_window.h"
 
@@ -82,22 +83,116 @@ use_mapping(size_t size)
 	return size > RAR_WINDOW_FILE_THRESHOLD;
 }
 
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
+    defined(__DragonFly__)
+#define RAR_WINDOW_POSIX_FALLOCATE 1
+#endif
+
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
+    defined(__OpenBSD__) || defined(__DragonFly__)
+#define RAR_WINDOW_MKOSTEMP 1
+#endif
+
+/* Writes zeros through the whole file, so every block is allocated. */
+static int
+write_through(int fd, size_t size)
+{
+	static const char zeros[65536];
+	size_t done = 0;
+
+	while (done < size) {
+		size_t chunk = size - done;
+		ssize_t written;
+
+		if (chunk > sizeof(zeros))
+			chunk = sizeof(zeros);
+		written = pwrite(fd, zeros, chunk, (off_t)done);
+		if (written < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		if (written == 0) {
+			errno = ENOSPC;
+			return -1;
+		}
+		done += (size_t)written;
+	}
+	return 0;
+}
+
+/*
+ * Reserves the disk space of the whole file now, so that a full disk fails
+ * here and not as SIGBUS when a page of the mapping is first written.
+ */
+static int
+reserve_space(int fd, size_t size)
+{
+#if defined(__APPLE__)
+	fstore_t store;
+
+	memset(&store, 0, sizeof(store));
+	store.fst_flags = F_ALLOCATECONTIG | F_ALLOCATEALL;
+	store.fst_posmode = F_PEOFPOSMODE;
+	store.fst_length = (off_t)size;
+	if (fcntl(fd, F_PREALLOCATE, &store) != 0) {
+		store.fst_flags = F_ALLOCATEALL;
+		if (fcntl(fd, F_PREALLOCATE, &store) != 0)
+			return write_through(fd, size);
+	}
+	return ftruncate(fd, (off_t)size);
+#elif defined(RAR_WINDOW_POSIX_FALLOCATE)
+	int error = posix_fallocate(fd, 0, (off_t)size);
+
+	if (error != 0) {
+		errno = error;
+		return -1;
+	}
+	return 0;
+#else
+	if (ftruncate(fd, (off_t)size) != 0)
+		return -1;
+	return write_through(fd, size);
+#endif
+}
+
 static void *
 map_file(int fd, size_t size)
 {
-	void *window;
-
-	if (fchmod(fd, 0600) != 0 || ftruncate(fd, (off_t)size) != 0)
+	if (fchmod(fd, 0600) != 0 || reserve_space(fd, size) != 0)
 		return MAP_FAILED;
-#ifdef __linux__
-	/* Reserve the disk space now: a full disk then fails here and not as
-	 * SIGBUS when a page of the mapping is first written. */
-	if (fallocate(fd, 0, 0, (off_t)size) != 0)
-		return MAP_FAILED;
-#endif
-	window = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	return window;
+	return mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 }
+
+#ifndef RAR_WINDOW_MKOSTEMP
+/*
+ * Creates a unique file with close-on-exec set by open() itself, for systems
+ * without mkostemp(): mkstemp() followed by fcntl() would leave a moment in
+ * which a forked process inherits the descriptor.
+ */
+static int
+create_cloexec(char *path, size_t prefix)
+{
+	static unsigned counter;
+	int attempt;
+
+	for (attempt = 0; attempt < 100; attempt++) {
+		struct timespec now;
+		unsigned long value;
+		int fd;
+
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		value = (unsigned long)now.tv_nsec ^
+		    ((unsigned long)now.tv_sec << 20) ^
+		    ((unsigned long)getpid() << 10) ^ counter++;
+		snprintf(path + prefix, 7, "%06lx", value & 0xffffff);
+		fd = open(path, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+		if (fd >= 0 || errno != EEXIST)
+			return fd;
+	}
+	return -1;
+}
+#endif
 
 static void *
 map_unnamed_file(size_t size, const char *tmpdir)
@@ -109,11 +204,12 @@ map_unnamed_file(size_t size, const char *tmpdir)
 	fd = open(tmpdir, O_TMPFILE | O_RDWR | O_EXCL | O_CLOEXEC, 0600);
 	if (fd >= 0) {
 		window = map_file(fd, size);
+		if (window == MAP_FAILED)
+			window_log("RAR window: unnamed file in %s failed: %s",
+			    tmpdir, strerror(errno));
 		close(fd);
 		if (window != MAP_FAILED)
 			return window;
-		window_log("RAR window: unnamed file in %s failed: %s",
-		    tmpdir, strerror(errno));
 	} else
 		window_log("RAR window: O_TMPFILE in %s failed: %s",
 		    tmpdir, strerror(errno));
@@ -126,16 +222,20 @@ map_unnamed_file(size_t size, const char *tmpdir)
 		if (path == NULL)
 			return MAP_FAILED;
 		snprintf(path, length, "%s%s", tmpdir, RAR_WINDOW_TEMPLATE);
-		fd = mkstemp(path);
+#ifdef RAR_WINDOW_MKOSTEMP
+		fd = mkostemp(path, O_CLOEXEC);
+#else
+		fd = create_cloexec(path, strlen(tmpdir) + 1 +
+		    sizeof("clamav-rar-window-") - 1);
+#endif
 		if (fd < 0) {
-			window_log("RAR window: mkstemp in %s failed: %s",
+			window_log("RAR window: temporary file in %s failed: %s",
 			    tmpdir, strerror(errno));
 			free(path);
 			return MAP_FAILED;
 		}
 		unlink(path);
 		free(path);
-		(void)fcntl(fd, F_SETFD, FD_CLOEXEC);
 		window = map_file(fd, size);
 		if (window == MAP_FAILED)
 			window_log("RAR window: file in %s failed: %s",
