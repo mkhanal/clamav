@@ -1,4 +1,4 @@
-.TH "freshclam.conf" "5" "December 4, 2013" "ClamAV @VERSION@" "Clam AntiVirus"
+.TH "freshclam.conf" "5" "December 4, 2013" "ClamCove @CLAMCOVE_VERSION@" "Clam AntiVirus"
 .SH "NAME"
 .LP
 \fBfreshclam.conf\fR \- Configuration file for Clam AntiVirus database update tool
