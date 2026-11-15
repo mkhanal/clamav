@@ -15,9 +15,12 @@ open('d/1-text.txt','w').write(txt)
 open('d/2-marker.txt','w').write('before ' + m + ' after\n')
 open('big.txt','w').write(('x' * 1000 + '\n') * 2100)   # ~2 MB, highly compressible
 open('marker.txt','w').write(m + '\n')
+open('big1.txt','w').write(('a' * 1000 + '\n') * 2100)
+open('big2.txt','w').write(('b' * 1000 + '\n') * 2100)
 open('v/span.bin','wb').write(bytes(random.getrandbits(8) for _ in range(6000)) + m.encode() + bytes(random.getrandbits(8) for _ in range(6000)))
 PY
 printf '%s comment\n' "$M" > cmt.txt
+head -c 4000 d/1-text.txt > checked.txt
 $R6 a -idq -ma4 -s -m5 -mcT+ $O/rar4-solid-ppmd.rar d/1-text.txt d/2-marker.txt
 $R6 a -idq -ma4 -s -m3 $O/rar4-solid-skip.rar big.txt marker.txt
 $R6 a -idq -ma4 -m3 -zcmt.txt $O/rar4-comment.rar d/1-text.txt
@@ -29,4 +32,12 @@ $R7 a -idq -ma5 -m3 -hppw $O/rar5-encrypted-headers.rar d/2-marker.txt
 $R6 a -idq -ma4 -m3 -v8k $O/rar4-volume.rar v/span.bin marker.txt
 $R7 a -idq -ma5 -m3 -v8k $O/rar5-volume.rar v/span.bin marker.txt
 $R7 a -idq -ma5 -s -m3 $O/rar5-solid-skip.rar big.txt marker.txt
+$R6 a -idq -ma4 -s -m3 $O/rar4-solid-skip-budget.rar big1.txt big2.txt marker.txt
+$R7 a -idq -ma5 -s -m3 $O/rar5-solid-skip-budget.rar big1.txt big2.txt marker.txt
+$R6 a -idq -ma4 -m0 $O/rar4-stored-checked.rar checked.txt
+$R7 a -idq -ma5 -m0 $O/rar5-stored-checked.rar checked.txt
+$R6 a -idq -ma4 -m3 $O/rar4-compressed-checked.rar d/1-text.txt
+$R7 a -idq -ma5 -m3 $O/rar5-compressed-checked.rar d/1-text.txt
+$R7 a -idq -ma5 -m3 -htb $O/rar5-blake2-checked.rar d/1-text.txt
+$R7 a -idq -ma5 -m0 -htb $O/rar5-stored-blake2-checked.rar checked.txt
 ls -la $O

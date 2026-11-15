@@ -213,6 +213,54 @@ static cl_error_t cli_unrar_scanmetadata(unrar_metadata_t *metadata, cli_ctx *ct
     return status;
 }
 
+/**
+ * @brief Bound what skipping entries of a solid RAR archive may cost.
+ *
+ * The entries after a skipped one continue its stream, so skipping decodes it.
+ * That work is limited by the scan time limit and by the scan size still
+ * available, as the work of extracting the entries is.
+ */
+static void cli_rar_set_skip_limits(cli_ctx *ctx, void *hArchive)
+{
+    uint64_t max_bytes     = 0;
+    uint64_t deadline_usec = 0;
+
+    if (ctx->engine->maxscansize != 0) {
+        max_bytes = (ctx->engine->maxscansize > ctx->scansize) ? (ctx->engine->maxscansize - ctx->scansize) : 1;
+    }
+    if (ctx->time_limit.tv_sec != 0) {
+        deadline_usec = (uint64_t)ctx->time_limit.tv_sec * 1000000 + (uint64_t)ctx->time_limit.tv_usec;
+    }
+
+    if (UNRAR_OK != cli_unrar_set_skip_limits(hArchive, max_bytes, deadline_usec)) {
+        cli_dbgmsg("RAR: Failed to set the limits for skipping files.\n");
+    }
+}
+
+/**
+ * @brief Skip the next file of a RAR archive.
+ *
+ * @return true if skipped. false if the archive cannot be read further. When
+ *         that is because skipping used up the scan time or scan size, the
+ *         limits-exceeded alert is raised, so the archive is not reported clean.
+ */
+static bool cli_rar_skip_file(cli_ctx *ctx, void *hArchive)
+{
+    cl_unrar_error_t unrar_ret = cli_unrar_skip_file(hArchive);
+
+    if (UNRAR_OK == unrar_ret) {
+        return true;
+    }
+
+    if (UNRAR_ELIMIT == unrar_ret) {
+        cli_dbgmsg("RAR: Skipping a file exceeded the scan time or scan size limit.\n");
+        if (CL_SUCCESS == cli_checktimelimit(ctx)) {
+            cli_append_potentially_unwanted_if_heur_exceedsmax(ctx, "Heuristics.Limits.Exceeded.MaxScanSize");
+        }
+    }
+    return false;
+}
+
 static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
 {
     cl_error_t status          = CL_EPARSE;
@@ -265,6 +313,8 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
             goto done;
         }
     }
+
+    cli_rar_set_skip_limits(ctx, hArchive);
 
     /* If the archive header had a comment, write it to the comment dir. */
     if ((comment != NULL) && (comment_size > 0)) {
@@ -321,7 +371,7 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
                 cli_dbgmsg("RAR: Encrypted file header, unable to reading file metadata and file contents. Skipping file...\n");
                 nEncryptedFilesFound += 1;
 
-                if (UNRAR_OK != cli_unrar_skip_file(hArchive)) {
+                if (!cli_rar_skip_file(ctx, hArchive)) {
                     /* Failed to skip!  Break extraction loop. */
                     cli_dbgmsg("RAR: Failed to skip file. RAR archive extraction has failed.\n");
                     break;
@@ -356,7 +406,7 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
                 /* Entry is a directory. Skip. */
                 cli_dbgmsg("RAR: Found directory. Skipping to next file.\n");
 
-                if (UNRAR_OK != cli_unrar_skip_file(hArchive)) {
+                if (!cli_rar_skip_file(ctx, hArchive)) {
                     /* Failed to skip!  Break extraction loop. */
                     cli_dbgmsg("RAR: Failed to skip directory. RAR archive extraction has failed.\n");
                     break;
@@ -367,7 +417,7 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
 
                 cli_dbgmsg("RAR: Next file is too large (%" PRIu64 " bytes); it would exceed max scansize.  Skipping to next file.\n", metadata.unpack_size);
 
-                if (UNRAR_OK != cli_unrar_skip_file(hArchive)) {
+                if (!cli_rar_skip_file(ctx, hArchive)) {
                     /* Failed to skip!  Break extraction loop. */
                     cli_dbgmsg("RAR: Failed to skip file. RAR archive extraction has failed.\n");
                     break;
@@ -377,7 +427,7 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx)
                 cli_dbgmsg("RAR: Encrypted file, unable to extract file contents. Skipping file...\n");
                 nEncryptedFilesFound += 1;
 
-                if (UNRAR_OK != cli_unrar_skip_file(hArchive)) {
+                if (!cli_rar_skip_file(ctx, hArchive)) {
                     /* Failed to skip!  Break extraction loop. */
                     cli_dbgmsg("RAR: Failed to skip file. RAR archive extraction has failed.\n");
                     break;

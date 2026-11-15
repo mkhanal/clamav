@@ -9,6 +9,7 @@ extracts.
 """
 
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -20,8 +21,33 @@ MARKER = b'ClamAV-RAR-backend-test-marker-6f1c2e'
 
 # Archive -> what every entry must extract to: (size, SHA-256).
 EXTRACTED = {
-    # RAR 1.5 and RAR 2.0 / 2.6 compression, including multimedia (audio)
-    # blocks and solid streams.
+    # RAR 2.9 (RAR 3.x / 4.x format) standard filters, and a filter over
+    # PPMd-coded data.
+    'rar4-filter-e8.rar': [
+        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+    'rar4-filter-e8e9.rar': [
+        (8000, '815934886151360cff53369052cab8be55fcdca7168f88cdfcd29481628305d6')],
+    'rar4-filter-delta.rar': [
+        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
+    'rar4-filter-rgb.rar': [
+        (18486, '1981c9d2d85226d003f413b0fbf13733b33a2aa151b03c6c281aa6d8aa9ac9e8')],
+    'rar4-filter-audio.rar': [
+        (48044, '6ce068910efc77af2d618bf035c6348b13d9fcf828bf3e69b5d068b55a530ab3')],
+    'rar4-filter-itanium.rar': [
+        (11200, '6b7a6404e2e03a3e5fc8d512f3ac85c9a5f18f0b590011077840c829d44798c4')],
+    'rar4-ppmd-e8.rar': [
+        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+    # RAR5 filters.
+    'rar5-filter-delta.rar': [
+        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
+    'rar5-filter-e8.rar': [
+        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+}
+
+# RAR 1.5, 2.0 and 2.6 compression, including multimedia (audio) blocks and
+# solid streams, as RARLAB unRAR extracts it. The libarchive backend has no
+# decoder for it.
+EXTRACTED_BY_UNRAR_ONLY = {
     'rar15-small.rar': [
         (302, '6905378fc71be9665755071e77d712963f14a9e3ccab8a62fb30d42023ba8947')],
     'rar15-solid.rar': [
@@ -45,27 +71,6 @@ EXTRACTED = {
         (3500, '445ec62ce9e27c9f752dddc1d906350720012014261072dee5dc7cec435a0cd9')],
     'rar26-lz-audio.rar': [
         (9998, 'f0bc83e91397965891393014c78cf130fa4a6265e9aa2e3d5fe5644e57018c9c')],
-    # RAR 2.9 (RAR 3.x / 4.x format) standard filters, and a filter over
-    # PPMd-coded data.
-    'rar4-filter-e8.rar': [
-        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
-    'rar4-filter-e8e9.rar': [
-        (8000, '815934886151360cff53369052cab8be55fcdca7168f88cdfcd29481628305d6')],
-    'rar4-filter-delta.rar': [
-        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
-    'rar4-filter-rgb.rar': [
-        (18486, '1981c9d2d85226d003f413b0fbf13733b33a2aa151b03c6c281aa6d8aa9ac9e8')],
-    'rar4-filter-audio.rar': [
-        (48044, '6ce068910efc77af2d618bf035c6348b13d9fcf828bf3e69b5d068b55a530ab3')],
-    'rar4-filter-itanium.rar': [
-        (11200, '6b7a6404e2e03a3e5fc8d512f3ac85c9a5f18f0b590011077840c829d44798c4')],
-    'rar4-ppmd-e8.rar': [
-        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
-    # RAR5 filters.
-    'rar5-filter-delta.rar': [
-        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
-    'rar5-filter-e8.rar': [
-        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
 }
 
 
@@ -113,7 +118,7 @@ class TC(testcase.TestCase):
         return self.execute_command(command)
 
     def test_every_compression_version_and_filter_extracts_exactly(self):
-        self.step_name('Test RAR 1.5, 2.0, 2.6, 2.9 filters and RAR5 filters extract byte for byte')
+        self.step_name('Test RAR 2.9 filters and RAR5 filters extract byte for byte')
 
         for archive, entries in EXTRACTED.items():
             with self.subTest(archive=archive):
@@ -127,6 +132,215 @@ class TC(testcase.TestCase):
                 assert output.ec == 1  # virus
                 self.verify_output(output.out, expected=[
                     'RAR_ENTRY_{}.UNOFFICIAL FOUND'.format(index) for index in range(len(entries))])
+
+    def test_compression_before_rar_2_9_is_extracted_by_unrar_only(self):
+        self.step_name('Test RAR 1.5, 2.0 and 2.6 entries: extracted by unRAR, an extraction error without it')
+
+        for archive, entries in EXTRACTED_BY_UNRAR_ONLY.items():
+            with self.subTest(archive=archive):
+                testfile = TC.path_rar / archive
+
+                if TC.backend == 'rarlab':
+                    path_db = TC.path_tmp / (archive + '.hsb')
+                    path_db.write_text(''.join(
+                        '{}:{}:RAR_ENTRY_{}\n'.format(sha256, size, index)
+                        for index, (size, sha256) in enumerate(entries)))
+
+                    output = self.scan(testfile, '--allmatch', path_db=path_db)
+
+                    assert output.ec == 1  # virus
+                    self.verify_output(output.out, expected=[
+                        'RAR_ENTRY_{}.UNOFFICIAL FOUND'.format(index) for index in range(len(entries))])
+                else:
+                    # Nothing is extracted and nothing is reported as extracted:
+                    # each entry fails with an error, never an empty success.
+                    output = self.scan(testfile, '--debug')
+
+                    assert output.ec == 0  # clean
+                    self.verify_output(output.out, expected=['{}: OK'.format(testfile)])
+                    assert (output.out + output.err).count('RAR: Error extracting file') >= len(entries)
+
+    def test_entry_is_checked_against_its_checksum(self):
+        self.step_name('Test an entry with one flipped data byte is not extracted as if it were intact')
+
+        # One entry each: stored and compressed, RAR4 CRC32, RAR5 CRC32 and
+        # RAR5 BLAKE2sp. The middle of each archive is entry data.
+        archives = ('rar4-stored-checked.rar', 'rar4-compressed-checked.rar',
+                    'rar5-stored-checked.rar', 'rar5-compressed-checked.rar',
+                    'rar5-blake2-checked.rar', 'rar5-stored-blake2-checked.rar')
+        for archive in archives:
+            with self.subTest(archive=archive):
+                intact = TC.path_rar / archive
+                output = self.scan(intact, '--debug')
+                assert output.ec == 0  # clean
+                assert 'RAR: Extraction complete' in output.out + output.err
+                assert 'RAR: Error extracting file' not in output.out + output.err
+
+                if TC.backend == 'rarlab':
+                    # unRAR hands over data whose checksum does not match, and it is scanned.
+                    continue
+
+                damaged = TC.path_tmp / ('damaged-' + archive)
+                data = bytearray(intact.read_bytes())
+                data[len(data) // 2] ^= 0x01
+                damaged.write_bytes(data)
+
+                output = self.scan(damaged, '--debug')
+                assert output.ec == 0  # clean
+                assert 'RAR: Error extracting file' in output.out + output.err
+                assert 'RAR: Extraction complete' not in output.out + output.err
+
+    def scan_damaged_copy(self, archive, offset, size, sha256, name):
+        damaged = TC.path_tmp / name
+        data = bytearray((TC.path_rar / archive).read_bytes())
+        data[offset] ^= 0xFF
+        damaged.write_bytes(data)
+
+        path_db = TC.path_tmp / (name + '.hsb')
+        path_db.write_text('{}:{}:RAR_ENTRY\n'.format(sha256, size))
+
+        output = self.scan(damaged, path_db=path_db)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_ENTRY.UNOFFICIAL FOUND'.format(damaged)])
+
+    def test_rar5_entry_is_extracted_when_a_header_fails_its_check(self):
+        self.step_name('Test the entry of a RAR5 archive is extracted when a header checksum or extra record is damaged')
+
+        # rar5-compressed-checked.rar has one entry. Bytes 8 and 24 start the CRC32 of the main and the file header; byte 19 is in the main header's extra record. unRAR reads on past all three.
+        for offset, name, (size, sha256) in (
+            (8, 'main-crc', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (24, 'file-crc', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (19, 'main-extra', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+        ):
+            with self.subTest(byte=name):
+                self.scan_damaged_copy('rar5-compressed-checked.rar', offset, size, sha256, 'rar5-compressed-checked.rar-' + name)
+
+    def test_rar4_entry_is_extracted_when_a_header_fails_its_check(self):
+        self.step_name('Test the entry of a RAR 2.9 archive is extracted when a header field is damaged')
+
+        # rar4-compressed-checked.rar has one entry. Bytes 7 and 20 start the CRC16 of the main and the file header, 35 is the file header's host OS, 45 its method and 46 the size of its name. unRAR reads on past all of them.
+        for offset, name, (size, sha256) in (
+            (7, 'main-crc', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (20, 'file-crc', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (35, 'host-os', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (45, 'method', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (46, 'name-size', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+        ):
+            with self.subTest(byte=name):
+                self.scan_damaged_copy('rar4-compressed-checked.rar', offset, size, sha256, 'rar4-compressed-checked.rar-' + name)
+
+    def test_rar4_entry_ends_at_its_end_marker(self):
+        self.step_name('Test a RAR 2.9 entry that declares more than it holds is extracted up to its end marker')
+
+        # Byte 33 is part of the file header's unpacked size: flipped, the header declares 16 MB more than the entry holds. The data ends at its marker, as unRAR reads it, and its CRC32 still matches.
+        for offset, name, (size, sha256) in (
+            (33, 'size', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+        ):
+            with self.subTest(byte=name):
+                self.scan_damaged_copy('rar4-compressed-checked.rar', offset, size, sha256, 'rar4-compressed-checked.rar-' + name)
+
+    def test_rar4_header_declaring_an_impossible_size_reaches_the_limit(self):
+        self.step_name('Test a RAR 2.9 file header that declares an impossible size is stopped by the size limit')
+
+        # Byte 24 holds the high flags of the file header: flipped, they
+        # declare a 64-bit size, a salt and extended flags that are not there,
+        # so the unpacked size is read from the wrong bytes.
+        damaged = TC.path_tmp / 'rar4-damaged-flags.rar'
+        data = bytearray((TC.path_rar / 'rar4-compressed-checked.rar').read_bytes())
+        data[24] ^= 0xFF
+        damaged.write_bytes(data)
+
+        output = self.scan(damaged, '--alert-exceeds-max=yes')
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: Heuristics.Limits.Exceeded.MaxScanSize FOUND'.format(damaged)])
+
+    def test_rar4_data_decoded_before_damage_is_extracted(self):
+        self.step_name('Test a RAR 2.9 entry with damaged data yields what was decoded before the damage')
+
+        # Byte 69 is in the compressed data of the only entry: unRAR writes the first 2203 bytes before the damage stops it, and so does this backend.
+        for offset, name, (size, sha256) in (
+            (69, 'data', (2203, '0d6115a71f5b48e5653d632a76d307f6690ce14184fde7910995cecd52fc1a43')),
+        ):
+            with self.subTest(byte=name):
+                self.scan_damaged_copy('rar4-compressed-checked.rar', offset, size, sha256, 'rar4-compressed-checked.rar-' + name)
+
+    def test_solid_entry_after_one_failing_its_checksum(self):
+        self.step_name('Test the entry after one that fails its checksum in a solid RAR 2.9 archive')
+
+        # Byte 36 is the CRC32 of d/1-text.txt. Its data is intact, so the
+        # stream carries on and d/2-marker.txt, which holds the marker, is
+        # extracted.
+        damaged = TC.path_tmp / 'rar4-solid-ppmd-damaged-crc.rar'
+        data = bytearray((TC.path_rar / 'rar4-solid-ppmd.rar').read_bytes())
+        data[36] ^= 0xFF
+        damaged.write_bytes(data)
+
+        output = self.scan(damaged)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(damaged)])
+
+    def test_rar5_entry_with_damaged_tables_yields_what_was_decoded(self):
+        self.step_name('Test a RAR5 entry that stops at bad Huffman tables yields what was decoded before them')
+
+        # Libarchive's rar5-bad-tables.rar declares 64 bytes and stops after 34. It is
+        # extracted by unRAR the same way.
+        path_db = TC.path_tmp / 'rar5-bad-tables.hsb'
+        path_db.write_text('eb142b0cae0baa72a767ebc0823d1be94e14c5bfc52d8e417fc4302fceb6240c:34:RAR_ENTRY\n')
+
+        testfile = TC.path_rar / 'rar5-bad-tables.rar'
+        output = self.scan(testfile, path_db=path_db)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_ENTRY.UNOFFICIAL FOUND'.format(testfile)])
+
+    def test_rar5_data_decoded_before_damage_is_extracted(self):
+        self.step_name('Test a RAR5 entry with damaged data yields what was decoded before the damage')
+
+        # Byte 77 is in the compressed data of the only entry: unRAR writes the first 4727 bytes before the damage stops it, and so does this backend.
+        for offset, name, (size, sha256) in (
+            (77, 'data', (4727, '627951f5d4a5f0a3e6219fbbf6ab91b6c2ebfae079a6daa1aa896c6e9a0eadcf')),
+        ):
+            with self.subTest(byte=name):
+                self.scan_damaged_copy('rar5-compressed-checked.rar', offset, size, sha256, 'rar5-compressed-checked.rar-' + name)
+
+    def test_archive_whose_header_failed_its_check_ends_in_an_error(self):
+        self.step_name('Test the entry of an archive whose header checksum is wrong is scanned and the archive ends in an error')
+
+        # unRAR extracts the entry, then reports an error at the end of the
+        # archive; so does this backend.
+        for archive, offset in (('rar4-compressed-checked.rar', 20), ('rar5-compressed-checked.rar', 24)):
+            with self.subTest(archive=archive):
+                damaged = TC.path_tmp / ('damaged-header-' + archive)
+                data = bytearray((TC.path_rar / archive).read_bytes())
+                data[offset] ^= 0xFF
+                damaged.write_bytes(data)
+
+                output = self.scan(damaged, '--debug')
+                assert output.ec == 0  # clean
+                assert 'RAR: Extraction complete' in output.out + output.err
+                assert re.search(r'RAR: Error \(\d+\) reading file header', output.out + output.err)
+
+    def test_archive_without_a_valid_header_is_not_a_clean_end(self):
+        self.step_name('Test an archive with a signature but no valid header is an error, an empty archive is not')
+
+        # The libarchive backend reports an archive that has a signature and
+        # no valid main header, or a header it cannot read, as an error
+        # reading the header; an empty archive, with a valid main header and
+        # no entries, is read to its end.
+        for archive in ('rar4-signature-only.rar', 'rar5-signature-only.rar', 'rar5-truncated-header.rar'):
+            with self.subTest(archive=archive):
+                output = self.scan(TC.path_rar / archive, '--debug')
+                assert output.ec == 0  # clean
+                if TC.backend == 'rarlab':
+                    assert 'RAR: No more files in archive' in output.out + output.err
+                else:
+                    assert re.search(r'RAR: Error \(\d+\) reading file header', output.out + output.err)
+
+        for archive in ('rar4-empty.rar', 'rar5-empty.rar'):
+            with self.subTest(archive=archive):
+                output = self.scan(TC.path_rar / archive, '--debug')
+                assert output.ec == 0  # clean
+                assert 'RAR: No more files in archive' in output.out + output.err
+                assert 'reading file header' not in output.out + output.err
 
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
@@ -155,6 +369,38 @@ class TC(testcase.TestCase):
                 else:
                     assert output.ec == 1  # virus
                     self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
+
+    def test_pending_filter_does_not_reach_next_solid_entry(self):
+        self.step_name('Test a filter pending at the end of a solid entry does not alter the next entry')
+
+        # a.txt ends by defining the standard E8 filter for the range where
+        # b.bin starts. Filters never span entries, so b.bin is extracted
+        # unfiltered; applying the pending filter alters or fails it.
+        path_db = TC.path_tmp / 'rar-pending-filter.hdb'
+        path_db.write_text('1bfecfec1bd85b77b4fe53c6ec683d98:74:PendingFilterMarker\n')
+
+        testfile = TC.path_rar / 'rar4-solid-pending-filter.rar'
+        output = self.scan(testfile, path_db=path_db)
+
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: PendingFilterMarker.UNOFFICIAL FOUND'.format(testfile)])
+
+    def test_skipping_in_a_solid_archive_is_bounded(self):
+        self.step_name('Test the work of skipping entries of a solid archive is bounded by the scan size')
+
+        # big1.txt and big2.txt each exceed --max-filesize and are skipped;
+        # marker.txt follows them in the same solid stream. The libarchive
+        # backend decodes what it skips, which costs as much as scanning
+        # it would, so --max-scansize bounds it: 3M leaves room for one of
+        # them. The scan reports the limit instead of coming back clean.
+        for archive in ('rar4-solid-skip-budget.rar', 'rar5-solid-skip-budget.rar'):
+            with self.subTest(archive=archive):
+                testfile = TC.path_rar / archive
+                output = self.scan(testfile, '--max-filesize=1M --max-scansize=3M --alert-exceeds-max=yes')
+
+                assert output.ec == 1  # virus
+                self.verify_output(output.out, expected=[
+                    '{}: Heuristics.Limits.Exceeded.MaxFileSize FOUND'.format(testfile)])
 
     def test_archive_comment_is_scanned(self):
         self.step_name('Test RAR 2.9 (packed) and RAR5 archive comments are scanned')
