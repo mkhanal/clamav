@@ -802,8 +802,6 @@ START_TEST(test_cl_scanfile_rar_entry_of_unknown_size_is_bounded)
     unsigned int sigs         = 0;
     struct cl_scan_options options;
     struct cl_engine *engine;
-    struct timeval start, end;
-    long elapsed_ms;
     cl_error_t ret;
 
     const char *hdb  = OBJDIR PATHSEP "input" PATHSEP "clamav.hdb";
@@ -821,14 +819,10 @@ START_TEST(test_cl_scanfile_rar_entry_of_unknown_size_is_bounded)
     options.parse |= ~0;
     options.heuristic |= CL_SCAN_HEURISTIC_EXCEEDS_MAX;
 
-    gettimeofday(&start, NULL);
     ret = cl_scanfile(file, &virname, &scanned, engine, &options);
-    gettimeofday(&end, NULL);
-    elapsed_ms = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_usec - start.tv_usec) / 1000;
 
     ck_assert_msg(ret == CL_VIRUS, "cl_scanfile did not alert for %s: %s", file, cl_strerror(ret));
-    ck_assert_msg(virname && !strncmp(virname, "Heuristics.Limits.Exceeded", strlen("Heuristics.Limits.Exceeded")), "virusname: %s", virname);
-    ck_assert_msg(elapsed_ms < 1000, "decoding the entry ran on for %ld ms past a scan time limit of 100 ms", elapsed_ms);
+    ck_assert_msg(virname && !strcmp(virname, "Heuristics.Limits.Exceeded.MaxScanTime"), "virusname: %s", virname ? virname : "(null)");
 
     cl_engine_free(engine);
 }

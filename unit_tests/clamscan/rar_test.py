@@ -14,7 +14,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -1059,8 +1058,7 @@ class TC(testcase.TestCase):
         return None
 
     def wait_for_window_mapping(self, process):
-        deadline = time.monotonic() + 120
-        while process.poll() is None and time.monotonic() < deadline:
+        while process.poll() is None:
             mapping = self.window_mapping(process)
             if mapping is not None:
                 return mapping
