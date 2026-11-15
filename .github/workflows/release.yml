@@ -30,12 +30,12 @@ jobs:
 
       - name: Resolve the version
         run: |
-          if [[ ! "$TAG" =~ ^clamcove-([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)$ ]]; then
-            echo "tag $TAG is not clamcove-<clamav version>-<n>"; exit 1
+          if [[ ! "$TAG" =~ ^clamcove-([0-9]+\.[0-9]+\.[0-9]+)\.([0-9]+)$ ]]; then
+            echo "tag $TAG is not clamcove-<clamav version>.<n>"; exit 1
           fi
           echo "VERSION=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
-          echo "OUT=clamcove-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
-          echo "REV=${BASH_REMATCH[1]}-${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
+          echo "OUT=clamcove-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
+          echo "REV=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
           git rev-parse --verify --quiet "clamav-${BASH_REMATCH[1]}^{commit}" > /dev/null \
             || { echo "upstream tag clamav-${BASH_REMATCH[1]} is not in this repository"; exit 1; }
 
@@ -94,10 +94,13 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Fetch the released tarball and verify it
         run: |
-          [[ "$TAG" =~ ^clamcove-([0-9]+\.[0-9]+\.[0-9]+-[0-9]+)$ ]]
+          [[ "$TAG" =~ ^clamcove-([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$ ]]
           REV=${BASH_REMATCH[1]}
           echo "REV=$REV" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/dl" "$RUNNER_TEMP/ctx"
@@ -117,5 +120,20 @@ jobs:
 
       - name: Push
         run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove"
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker push "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV"
+          docker push "$image:$REV"
+          newest_in() {
+            git tag -l 'clamcove-*' | sed 's/^clamcove-//' | grep -E "^${1//./\\.}" | sort -V | tail -1
+          }
+          IFS=. read -r major minor patch _ <<< "$REV"
+          for line in "$major.$minor.$patch." "$major.$minor." "$major." ""; do
+            floating=${line%.}
+            [ -z "$floating" ] && floating=latest
+            if [ "$(newest_in "$line")" = "$REV" ]; then
+              docker tag "$image:$REV" "$image:$floating"
+              docker push "$image:$floating"
+            else
+              echo "skipped: $image:$floating stays on a newer release"
+            fi
+          done
