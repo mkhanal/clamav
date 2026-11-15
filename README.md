@@ -17,14 +17,13 @@ change it makes accepted into ClamAV, so that it shrinks back to ClamAV.
 | Difference | ClamAV 1.5.4 | ClamCove | Upstream status |
 | --- | --- | --- | --- |
 | PCRE container check | PCRE subsignatures are evaluated whatever the container | PCRE subsignatures whose container cannot match are skipped | [Cisco-Talos/clamav#1886](https://github.com/Cisco-Talos/clamav/issues/1886), open |
-| RAR read through libarchive | RAR read by RARLAB unRAR code | RAR read through libarchive, optional build, no RARLAB code ([#7](https://github.com/mkhanal/clamcove/pull/7)) | Not yet offered |
-| Alert on an incomplete RAR | A RAR that cannot be fully scanned reports clean | Opt-in `AlertIncompleteRAR` / `--alert-incomplete-rar` raises `Heuristics.Incomplete.RAR` ([#11](https://github.com/mkhanal/clamcove/pull/11)) | Not yet offered |
-| RAR 1.5 archives | Extracted by unRAR | Not extracted in the libarchive build; alerts when the option above is on, because the only description of the format is unRAR's source | Not yet offered (part of #7) |
+| RAR read through libarchive | RAR read by RARLAB unRAR code | Not in 1.5.4.1: RAR is read by RARLAB unRAR, as in ClamAV. Planned for 1.5.4.2 as an optional libarchive build ([#7](https://github.com/mkhanal/clamcove/pull/7)) | Not yet offered |
+| Alert on an incomplete RAR | A RAR that cannot be fully scanned reports clean | Not in 1.5.4.1. Planned for 1.5.4.2: opt-in `AlertIncompleteRAR` / `--alert-incomplete-rar` raises `Heuristics.Incomplete.RAR` ([#11](https://github.com/mkhanal/clamcove/pull/11)) | Not yet offered |
+| RAR 1.5 archives | Extracted by unRAR | Not in 1.5.4.1: extracted by unRAR, as in ClamAV. Planned for 1.5.4.2: not extracted in the libarchive build, alerting when the option above is on ([#7](https://github.com/mkhanal/clamcove/pull/7)) | Not yet offered |
 | Version output | `ClamAV 1.5.4/...` | `ClamAV 1.5.4/... (ClamCove 1.5.4.1)`, ClamAV's version first and unchanged ([#13](https://github.com/mkhanal/clamcove/pull/13)) | ClamCove only, never offered |
 | freshclam User-Agent | `ClamAV/1.5.4 (OS: ...)` | Unchanged | None needed |
 
-Rows for pull requests that are not merged yet describe the release they ship
-in.
+Rows marked as planned describe a later release; they are not in 1.5.4.1.
 
 ClamCove is based on ClamAV by Cisco Systems, Inc. ClamAV is a trademark of
 Cisco. ClamCove is not affiliated with or endorsed by Cisco or the ClamAV
