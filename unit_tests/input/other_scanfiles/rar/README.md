@@ -97,8 +97,15 @@ data; their headers record the size and CRC of what unRAR decodes from it.
 | `rar20-lz-text.rar`, `rar20-audio-1ch.rar`, `rar20-audio-4ch.rar`, `rar20-block-switches.rar`, `rar26-lz-audio.rar` | RAR 2.0 and 2.6 compression, including multimedia (audio) blocks |
 | `rar4-split-unpack-version-change.rar` | a RAR 2.9 entry whose continuation header declares unpack version 20: the parts of a split entry must agree |
 | `rar20-solid-stored-entry.rar` | a RAR 2.0 solid stream with a stored entry between two compressed ones, the last matching back into the first: a stored entry leaves the stream's window alone |
+| `rar20-solid-flag-small-window.rar` | a small RAR 2.0 entry in an archive not marked solid, followed by an entry flagged solid that matches back into it at an offset past the first entry's size |
+| `rar4-split-unpack-version-change.rar` | a RAR 2.9 entry whose continuation header declares unpack version 20: the parts of a split entry must agree |
+| `rar20-solid-stored-entry.rar` | a RAR 2.0 solid stream with a stored entry between two compressed ones, the last matching back into the first: a stored entry leaves the stream's window alone |
 | `rar4-split-unpack-version-change.rar` | a RAR 2.9 entry whose continuation header declares unpack version 20: the parts of a split entry must agree |
 | `rar4-split-unpack-version-change.rar` | a RAR 2.9 entry whose continuation header declares unpack version 20: the parts of a split entry must agree |
+
+`rar4-solid-ppmd-damaged-range.rar` is `rar4-solid-skip-budget.rar` mutated by a
+fuzzer (its checksums are wrong): its second entry continues a PPMd block after
+damaged data left the range decoder mid-symbol.
 
 `rar4-solid-ppmd-damaged-range.rar` is `rar4-solid-skip-budget.rar` mutated by a
 fuzzer (its checksums are wrong): its second entry continues a PPMd block after

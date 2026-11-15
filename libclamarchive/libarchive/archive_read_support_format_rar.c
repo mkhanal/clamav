@@ -2246,6 +2246,8 @@ read_header(struct archive_read *a, struct archive_entry *entry,
    * programs defined so far carry over in a solid stream, but a filter
    * still waiting for its block does not.
    */
+  if (continues_solid && (ret2 = rar_prepare_window(a)) != ARCHIVE_OK)
+    return (ret2);
   rar->mixed_solid_decoders = 0;
   if (rar->compression_method != COMPRESS_METHOD_STORE &&
       continues_solid &&
@@ -3016,7 +3018,9 @@ rar_prepare_window(struct archive_read *a)
   struct rar *rar = a->format->data;
 
   if (!rar->dictionary_size || !rar->lzss.window ||
-      (unsigned int)(rar->lzss.mask + 1) < rar->dictionary_size)
+      (unsigned int)(rar->lzss.mask + 1) < rar->dictionary_size ||
+      ((rar->file_flags & FHD_SOLID) &&
+       (unsigned int)(rar->lzss.mask + 1) < DICTIONARY_MAX_SIZE))
   {
     /* Seems as though dictionary sizes are not used. Even so, minimize
      * memory usage as much as possible.
@@ -3041,8 +3045,19 @@ rar_prepare_window(struct archive_read *a)
       return (ARCHIVE_FATAL);
     }
     if (rar->lzss.window != NULL)
-      __archive_rar_window_free(rar->lzss.window,
-                                (size_t)rar->lzss.mask + 1);
+    {
+      /* An entry that continues the solid stream in a window sized for
+       * the entries before it keeps what they wrote. */
+      int64_t pos;
+      int64_t old_size = (int64_t)rar->lzss.mask + 1;
+
+      for (pos = rar->lzss.position > old_size ?
+             rar->lzss.position - old_size : 0;
+           pos < rar->lzss.position; pos++)
+        ((unsigned char *)new_window)[pos & (new_size - 1)] =
+          rar->lzss.window[pos & rar->lzss.mask];
+      __archive_rar_window_free(rar->lzss.window, (size_t)old_size);
+    }
     rar->lzss.window = (unsigned char *)new_window;
     rar->dictionary_size = new_size;
     rar->lzss.mask = rar->dictionary_size - 1;
