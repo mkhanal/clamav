@@ -135,7 +135,7 @@ class TC(testcase.TestCase):
         output = self.scan(testfile)
 
         assert output.ec == 1  # virus
-        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile)])
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
 
     def test_solid_entry_after_a_skipped_entry(self):
         self.step_name('Test the entry after one skipped for size in a solid archive')
@@ -151,10 +151,10 @@ class TC(testcase.TestCase):
 
                 if TC.backend == 'rarlab':
                     assert output.ec == 0  # clean
-                    self.verify_output(output.out, expected=['{}: OK'.format(testfile)])
+                    self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
                 else:
                     assert output.ec == 1  # virus
-                    self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile)])
+                    self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
 
     def test_archive_comment_is_scanned(self):
         self.step_name('Test RAR 2.9 (packed) and RAR5 archive comments are scanned')
@@ -165,7 +165,7 @@ class TC(testcase.TestCase):
                 output = self.scan(testfile, path_db=TC.path_marker_start_db)
 
                 assert output.ec == 1  # virus
-                self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER_AT_START.UNOFFICIAL FOUND'.format(testfile)])
+                self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER_AT_START.UNOFFICIAL FOUND'.format(testfile.name)])
 
     def test_encrypted_data_and_headers(self):
         self.step_name('Test encrypted entries and encrypted headers alert as encrypted archives')
@@ -177,11 +177,11 @@ class TC(testcase.TestCase):
 
                 output = self.scan(testfile, '--alert-encrypted-archive=yes')
                 assert output.ec == 1  # virus
-                self.verify_output(output.out, expected=['{}: Heuristics.Encrypted.RAR FOUND'.format(testfile)])
+                self.verify_output(output.out, expected=['{}: Heuristics.Encrypted.RAR FOUND'.format(testfile.name)])
 
                 output = self.scan(testfile)
                 assert output.ec == 0  # clean
-                self.verify_output(output.out, expected=['{}: OK'.format(testfile)])
+                self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
 
     def test_volume_set_is_read_across_volumes(self):
         self.step_name('Test a file split across volumes is scanned when the next volume is present')
@@ -196,7 +196,7 @@ class TC(testcase.TestCase):
 
                 output = self.scan(testfile)
                 assert output.ec == 1  # virus
-                self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile)])
+                self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
 
     def test_lone_volume(self):
         self.step_name('Test the first volume alone: a file split into the missing volume is not scanned')
@@ -213,4 +213,4 @@ class TC(testcase.TestCase):
 
                 output = self.scan(testfile)
                 assert output.ec == 0  # clean
-                self.verify_output(output.out, expected=['{}: OK'.format(testfile)])
+                self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
