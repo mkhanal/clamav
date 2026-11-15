@@ -148,6 +148,16 @@ int __archive_rar_skip_limit_hit(struct archive_read *,
 int __archive_read_rar5_skip_data(struct archive *,
     const struct archive_rar_skip_limit *);
 
+/*
+ * Tell the reader the most bytes the caller will take from the archive (0:
+ * no limit). A RAR5 window is sized to what its entries can write, so one
+ * larger than this is never allocated. Ignored by the RAR 2.9 reader.
+ */
+int archive_read_rar_set_output_bound(struct archive *, uint64_t);
+
+/* The RAR5 reader's half of archive_read_rar_set_output_bound(). */
+int __archive_read_rar5_set_output_bound(struct archive *, uint64_t);
+
 /* CRC32 as RAR uses it for data and header checksums. */
 uint32_t archive_rar_crc32(const void *, size_t);
 

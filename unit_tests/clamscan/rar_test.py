@@ -193,7 +193,7 @@ class TC(testcase.TestCase):
         super(TC, self).tearDown()
         self.verify_valgrind_log()
 
-    def scan(self, testfile, options='', path_db=None):
+    def scan(self, testfile, options='', path_db=None, memory_limit_kb=None):
         if path_db is None:
             path_db = TC.path_marker_db
 
@@ -205,6 +205,8 @@ class TC(testcase.TestCase):
             path_db=path_db,
             testfile=testfile,
         )
+        if memory_limit_kb is not None:
+            command = 'ulimit -v {} && {}'.format(memory_limit_kb, command)
         return self.execute_command(command)
 
     def test_every_compression_version_and_filter_extracts_exactly(self):
@@ -838,7 +840,7 @@ class TC(testcase.TestCase):
                 assert 'Heuristics.Incomplete.RAR' not in output.out
 
     def test_rar5_dictionary_beyond_what_is_allocated_is_reported(self):
-        self.step_name('Test a RAR5 solid stream with a dictionary larger than 1 GB is reported incomplete and the entries after it are scanned')
+        self.step_name('Test a RAR5 solid stream that needs a window larger than 1 GB is reported incomplete and the entries after it are scanned')
 
         # unRAR on a 64-bit system extracts it; this backend allocates 1 GB of
         # window at most.
@@ -849,9 +851,51 @@ class TC(testcase.TestCase):
             (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
             (TC.path_rar / 'rar5-stored-checked.rar').read_bytes())
         archive.set_main_flags(4)
-        archive.edit_file(0, lambda h: h.set_compression(dictionary=15))
-        testfile = self.write_rar5('solid-dictionary-4G.rar', archive)
 
-        self.assert_entry_found(testfile, STORED_ENTRY)
-        output = self.scan(testfile, '--alert-incomplete-rar=yes')
+        def declare_a_stream_of_1500_megabytes(header):
+            header.set_compression(dictionary=15)
+            header.unpacked_size = 1500 << 20
+
+        archive.edit_file(0, declare_a_stream_of_1500_megabytes)
+        testfile = self.write_rar5('solid-window-beyond-1G.rar', archive)
+
+        limits = '--max-filesize=2000M --max-scansize=4000M'
+        self.assert_entry_found(testfile, STORED_ENTRY, limits)
+        output = self.scan(testfile, limits + ' --alert-incomplete-rar=yes')
         assert 'Heuristics.Incomplete.RAR' in output.out
+
+    def solid_skip_archive(self, edit):
+        archive = rar5_craft.Archive((TC.path_rar / 'rar5-solid-skip.rar').read_bytes())
+        archive.edit_file(0, edit)
+        return archive
+
+    def test_rar5_solid_entry_declaring_a_dictionary_of_4_gigabytes_is_decoded(self):
+        self.step_name('Test the entries after a solid RAR5 entry that declares a dictionary of 4 GB are scanned')
+
+        # marker.txt is coded against big.txt before it, so it is found only
+        # if big.txt is decoded as part of the stream. The dictionary is
+        # larger than anything the stream writes; unRAR extracts both.
+        archive = self.solid_skip_archive(lambda h: h.set_compression(dictionary=15))
+        testfile = self.write_rar5('solid-dictionary-4G-in-stream.rar', archive)
+
+        output = self.scan(testfile, '--alert-incomplete-rar=yes')
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
+
+    def test_rar5_window_is_sized_to_what_the_stream_writes(self):
+        self.step_name('Test a solid RAR5 stream that declares a dictionary of 1 GB does not need 1 GB of address space')
+
+        # The window is sized to the data the stream writes, not to the
+        # dictionary a 200-byte header declares: a few kilobytes of archive
+        # do not allocate a gigabyte.
+        if TC.backend != 'libarchive':
+            self.skipTest('The RARLAB backend allocates the dictionary')
+        if not sys.platform.startswith('linux') or TC.valgrind != '':
+            self.skipTest('The address space is limited with ulimit -v on Linux, without valgrind')
+
+        archive = self.solid_skip_archive(lambda h: h.set_compression(dictionary=13))
+        testfile = self.write_rar5('solid-dictionary-1G-in-stream.rar', archive)
+
+        output = self.scan(testfile, '--alert-incomplete-rar=yes', memory_limit_kb=1000000)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])

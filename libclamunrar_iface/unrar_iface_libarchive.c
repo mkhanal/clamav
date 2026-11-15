@@ -1315,6 +1315,7 @@ cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint6
     h->skip_bytes_limited = max_bytes != 0;
     h->skip_bytes_left    = max_bytes;
     h->skip_deadline_usec = deadline_usec;
+    (void)archive_read_rar_set_output_bound(h->archive, max_bytes);
     return UNRAR_OK;
 }
 
