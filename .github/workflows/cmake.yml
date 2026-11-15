@@ -98,6 +98,10 @@ jobs:
           path: vcpkg-cache
           key: vcpkg-windows-x64-${{ hashFiles('.github/workflows/cmake.yml') }}-${{ matrix.name }}-${{ github.run_id }}
 
+      - name: Remove Git's link.exe, which shadows MSVC's
+        shell: bash
+        run: rm -f /usr/bin/link.exe
+
       - name: Set up the MSVC environment
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
