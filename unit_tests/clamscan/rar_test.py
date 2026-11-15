@@ -160,6 +160,9 @@ class TC(testcase.TestCase):
                     self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
                     assert (output.out + output.err).count('RAR: Error extracting file') >= len(entries)
 
+                    # Without the alert the archive is clean; with it, it is not.
+                    self.assert_incomplete_alert_only_when_enabled(testfile)
+
     def test_entry_is_checked_against_its_checksum(self):
         self.step_name('Test an entry with one flipped data byte is not extracted as if it were intact')
 
@@ -176,10 +179,8 @@ class TC(testcase.TestCase):
                 assert 'RAR: Extraction complete' in output.out + output.err
                 assert 'RAR: Error extracting file' not in output.out + output.err
 
-                if TC.backend == 'rarlab':
-                    # unRAR hands over data whose checksum does not match, and it is scanned.
-                    continue
-
+                # unRAR hands over data whose checksum does not match, and it
+                # is scanned; so is it with the libarchive backend.
                 damaged = TC.path_tmp / ('damaged-' + archive)
                 data = bytearray(intact.read_bytes())
                 data[len(data) // 2] ^= 0x01
@@ -187,8 +188,10 @@ class TC(testcase.TestCase):
 
                 output = self.scan(damaged, '--debug')
                 assert output.ec == 0  # clean
-                assert 'RAR: Error extracting file' in output.out + output.err
-                assert 'RAR: Extraction complete' not in output.out + output.err
+                assert 'RAR: Extraction complete' in output.out + output.err
+                assert 'RAR: Error extracting file' not in output.out + output.err
+
+                self.assert_incomplete_alert_only_when_enabled(damaged)
 
     def scan_damaged_copy(self, archive, offset, size, sha256, name):
         damaged = TC.path_tmp / name
@@ -402,6 +405,16 @@ class TC(testcase.TestCase):
                 self.verify_output(output.out, expected=[
                     '{}: Heuristics.Limits.Exceeded.MaxFileSize FOUND'.format(testfile.name)])
 
+                # Exceeding the limit is reported as that, never as an incomplete archive.
+                if TC.backend == 'libarchive':
+                    output = self.scan(testfile, '--max-filesize=1M --max-scansize=3M --alert-exceeds-max=yes --alert-incomplete-rar=yes')
+                    assert output.ec == 1  # virus
+                    assert 'Heuristics.Incomplete.RAR' not in output.out
+                    assert 'Heuristics.Limits.Exceeded' in output.out
+
+                    output = self.scan(testfile, '--max-filesize=1M --max-scansize=3M --alert-incomplete-rar=yes')
+                    assert 'Heuristics.Incomplete.RAR' not in output.out
+
     def test_archive_comment_is_scanned(self):
         self.step_name('Test RAR 2.9 (packed) and RAR5 archive comments are scanned')
 
@@ -460,3 +473,94 @@ class TC(testcase.TestCase):
                 output = self.scan(testfile)
                 assert output.ec == 0  # clean
                 self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
+
+    def scan_incomplete(self, testfile, enabled):
+        return self.scan(testfile, '--alert-incomplete-rar=yes' if enabled else '')
+
+    def assert_incomplete_alert_only_when_enabled(self, testfile):
+        output = self.scan_incomplete(testfile, True)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: Heuristics.Incomplete.RAR FOUND'.format(testfile.name)])
+
+        output = self.scan_incomplete(testfile, False)
+        assert output.ec == 0  # clean
+        self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
+
+    def test_incomplete_alert_for_a_lone_volume(self):
+        self.step_name('Test the first volume of a set alone alerts as incomplete only when enabled')
+
+        for prefix in ('rar4-volume', 'rar5-volume'):
+            with self.subTest(volumes=prefix):
+                path_lone = TC.path_tmp / (prefix + '-lone-incomplete')
+                path_lone.mkdir()
+                shutil.copy(str(TC.path_rar / (prefix + '.part1.rar')), str(path_lone))
+
+                self.assert_incomplete_alert_only_when_enabled(path_lone / (prefix + '.part1.rar'))
+
+    def test_incomplete_alert_for_a_truncated_archive(self):
+        self.step_name('Test a truncated archive alerts as incomplete only when enabled')
+
+        for archive in ('rar20-lz-text.rar', 'rar4-filter-e8.rar', 'rar5-filter-delta.rar'):
+            with self.subTest(archive=archive):
+                data = (TC.path_rar / archive).read_bytes()
+                testfile = TC.path_tmp / ('truncated-' + archive)
+                testfile.write_bytes(data[:len(data) // 2])
+
+                self.assert_incomplete_alert_only_when_enabled(testfile)
+
+    def test_incomplete_alert_for_a_corrupt_archive(self):
+        self.step_name('Test an archive without a readable header alerts as incomplete only when enabled')
+
+        signatures = {
+            'rar4': b'Rar!\x1a\x07\x00',
+            'rar5': b'Rar!\x1a\x07\x01\x00',
+        }
+        for name, signature in signatures.items():
+            with self.subTest(archive=name):
+                testfile = TC.path_tmp / (name + '-garbage-after-signature.rar')
+                testfile.write_bytes(signature + b'\xaa' * 64)
+
+                self.assert_incomplete_alert_only_when_enabled(testfile)
+
+    def test_incomplete_alert_for_damaged_data(self):
+        self.step_name('Test an entry whose data is damaged alerts as incomplete only when enabled')
+
+        for archive in ('rar4-filter-e8.rar', 'rar5-filter-delta.rar'):
+            with self.subTest(archive=archive):
+                data = bytearray((TC.path_rar / archive).read_bytes())
+                data[len(data) // 2] ^= 0xff
+                testfile = TC.path_tmp / ('damaged-' + archive)
+                testfile.write_bytes(bytes(data))
+
+                self.assert_incomplete_alert_only_when_enabled(testfile)
+
+    def test_no_incomplete_alert_for_a_complete_archive(self):
+        self.step_name('Test archives whose contents were all scanned are not reported as incomplete')
+
+        archives = ['rar4-solid-ppmd.rar', 'rar5-filter-delta.rar', 'rar4-comment.rar', 'rar5-comment.rar']
+        if TC.backend == 'rarlab':
+            archives += ['rar15-small.rar', 'rar20-solid.rar']
+        for archive in archives:
+            with self.subTest(archive=archive):
+                testfile = TC.path_rar / archive
+
+                output = self.scan(testfile, '--alert-incomplete-rar=yes')
+                assert 'Heuristics.Incomplete.RAR' not in output.out
+
+        path_set = TC.path_tmp / 'rar5-volume-complete-set'
+        path_set.mkdir()
+        for part in ('part1', 'part2'):
+            shutil.copy(str(TC.path_rar / 'rar5-volume.{}.rar'.format(part)), str(path_set))
+        output = self.scan(path_set / 'rar5-volume.part1.rar', '--alert-incomplete-rar=yes')
+        assert 'Heuristics.Incomplete.RAR' not in output.out
+
+    def test_incomplete_alert_does_not_report_encrypted_archives(self):
+        self.step_name('Test encrypted archives are left to the encrypted archive alert')
+
+        testfile = TC.path_rar / 'rar4-encrypted-data.rar'
+        output = self.scan(testfile, '--alert-incomplete-rar=yes')
+        assert output.ec == 0  # clean
+        self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
+
+        output = self.scan(testfile, '--alert-incomplete-rar=yes --alert-encrypted-archive=yes')
+        self.verify_output(output.out, expected=['{}: Heuristics.Encrypted.RAR FOUND'.format(testfile.name)])
