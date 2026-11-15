@@ -19,3 +19,57 @@ themselves are switched off and not vendored.
 
 Every change ClamAV makes to the release is a separate commit touching
 this directory. To see them, diff this tree against the release tarball.
+
+## Code added to the release
+
+`libarchive/archive_rar_unpack20.c` and `archive_rar_unpack20.h` are not part
+of libarchive. They decode RAR 2.0 and 2.6 data (unpack versions 20 and 26,
+including audio blocks and solid streams) and are a C port of the decoder in
+[nwaples/rardecode](https://github.com/nwaples/rardecode) (BSD-2-Clause),
+commit `f557bc97578a96c9196330d7ba642a8599a2ebd6`: `decode20.go`,
+`decode20_lz.go`, `decode20_audio.go`, `huffman.go`, `bit_reader.go`, and the
+length and offset tables of `decode29_lz.go`. The port keeps rardecode's
+structure and names, converted to C style, and nothing else was used as a
+source: RARLAB's unRAR code, and any earlier decoder written for this tree,
+were not read. rardecode's licence, which the port carries at the top of both
+files:
+
+```
+Copyright (c) 2015, Nicholas Waples
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+Where the port differs from rardecode:
+
+- At the start of a non-solid entry the previous-length and previous-offset
+  history is cleared as well as the tables and audio state; rardecode keeps
+  them from the previous file.
+- Matches are cut at the end of the entry's output instead of carried over.
+- The window is libarchive's RAR window, shared with nothing else; the entries
+  of one solid stream must all use the RAR 2.0 / 2.6 decoder (rardecode
+  refuses mixed decoders as well), otherwise the entry is an error.
+- A Huffman code that matches no symbol when fewer than 15 bits remain is a
+  decode error (rardecode indexes past its position table there).
+- Signed-byte conversions and shifts are written so they have no undefined
+  behaviour in C.
