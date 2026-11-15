@@ -42,7 +42,7 @@ data; their headers record the size and CRC of what unRAR decodes from it.
 | `rar4-filter-e8e9.rar`, `rar4-filter-itanium.rar` | the E8E9 and Itanium filters, which no `rar` we can run writes |
 | `rar4-solid-pending-filter.rar` | a filter defined at the end of `a.txt` for the range where `b.bin` starts: the filter must not reach `b.bin` |
 | `rar15-small.rar`, `rar15-solid.rar`, `rar15-rar20-solid.rar` | RAR 1.5 compression |
-| `rar20-lz-text.rar`, `rar20-audio-1ch.rar`, `rar20-audio-4ch.rar`, `rar20-block-switches.rar`, `rar20-solid.rar`, `rar26-lz-audio.rar` | RAR 2.0 and 2.6 compression, including multimedia (audio) blocks and solid streams |
+| `rar20-lz-text.rar`, `rar20-audio-1ch.rar`, `rar20-audio-4ch.rar`, `rar20-block-switches.rar`, `rar26-lz-audio.rar` | RAR 2.0 and 2.6 compression, including multimedia (audio) blocks |
 
 Both backends extract the RAR 2.0 and 2.6 archives as recorded in
 `rar_test.py`. No reader in this repository decodes RAR 1.5: with the libarchive

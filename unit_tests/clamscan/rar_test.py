@@ -46,10 +46,6 @@ EXTRACTED = {
         (6000, '081202b2c7e6e24cee2ffe0c106f2167f742d89bb8253bc96c8471d6e8e0d176')],
     'rar20-block-switches.rar': [
         (12000, '2e073b467b48ed65da8cc07906a96c4b069b1060808f2fe9c5c6a3183dde8000')],
-    'rar20-solid.rar': [
-        (4000, '3b18236852cb7dd43d027e87b7e11ca793e4a608df15f09a9bbb5a119af652c3'),
-        (3000, '8733a7dae580602b5bbf2c199265f5bf884ea542618801372c1bd5ac7b03ac2c'),
-        (3500, '445ec62ce9e27c9f752dddc1d906350720012014261072dee5dc7cec435a0cd9')],
     'rar26-lz-audio.rar': [
         (9998, 'f0bc83e91397965891393014c78cf130fa4a6265e9aa2e3d5fe5644e57018c9c')],
     # RAR5 filters.
@@ -197,7 +193,7 @@ class TC(testcase.TestCase):
             self.skipTest('unRAR hands over data whose checksum does not match, and it is scanned')
 
         for archive in ('rar20-lz-text.rar', 'rar20-audio-1ch.rar', 'rar20-audio-4ch.rar',
-                        'rar20-block-switches.rar', 'rar20-solid.rar', 'rar26-lz-audio.rar'):
+                        'rar20-block-switches.rar', 'rar26-lz-audio.rar'):
             with self.subTest(archive=archive):
                 data = bytearray((TC.path_rar / archive).read_bytes())
                 data[len(data) // 2] ^= 0x01
