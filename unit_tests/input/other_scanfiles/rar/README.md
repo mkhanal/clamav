@@ -28,6 +28,36 @@ The last two rows were written by a `rar` binary (RAR 2.9 archives: Unix host,
 real timestamps; RAR5: no other writer exists), but their exact commands were not
 recorded.
 
+## Made by RARLAB RAR 2.50 for DOS
+
+Written by RARLAB's own `RAR.EXE` 2.50 (SHA-256
+`426b45982a6a675d149f7ef3cbd3ad3171234c187cb633891c066aa819259651`, from
+rarlab.com), run under the `emu2` DOS emulator in a Debian container. The inputs
+are synthetic: `TEXT.TXT` (30000 bytes of seeded pseudo-random words), `S00.TXT`
+to `S06.TXT` (lines `line N of file 1: x...`, 19 to 2076 bytes), `RAND.BIN`
+(12000 pseudo-random bytes), `MONO8.WAV` (24000 bytes) and `QUAD.RAW` (20000
+bytes) of 8-bit audio-like data, and `EMPTY.DAT`, `ONE.DAT` and `TWO.DAT` of 0, 1
+and 2 bytes. DOS RAR 2.50 accepts `-md` only on OS/2, so every archive uses its
+default dictionary. The glob was expanded by RAR (`set -f` in the shell). The
+expected SHA-256 of each entry in `rar_test.py` is what the RARLAB backend
+extracts (black box), and it equals the SHA-256 of the input file. Entries of
+fewer than 3 bytes are not listed there: no signature matches them.
+
+| Fixture | Command (`RAR.EXE`, `-y` omitted) | Covers |
+|---|---|---|
+| `rar250-m3.rar` | `a NSM3.RAR TEXT.TXT S0*.TXT` | non-solid, method 3 (default) |
+| `rar250-solid-m1.rar`, `rar250-solid-m2.rar`, `rar250-solid-m3.rar`, `rar250-solid-m5.rar` | `a -s [-m1\|-m2\|-m5] SMn.RAR TEXT.TXT S0*.TXT` | solid, methods 1, 2, 3 (default) and 5 |
+| `rar250-solid-mm.rar` | `a -s -mm SMM.RAR MONO8.WAV QUAD.RAW S01.TXT S02.TXT RAND.BIN` | solid multimedia: audio and LZ blocks alternate between entries |
+| `rar250-mm-m5.rar` | `a -mm -m5 NSMM5.RAR MONO8.WAV QUAD.RAW TEXT.TXT` | non-solid multimedia, method 5 |
+| `rar250-solid-volumes.rar`, `.r00`, `.r01` | `a -s -m5 -v8 SVOL.RAR RAND.BIN TEXT.TXT S0*.TXT` | a solid set of 3 volumes, entries split across volumes |
+| `rar250-split.rar`, `.r00`, `.r01`, `.r02` | `a -m3 -v6 SPLIT.RAR MONO8.WAV S01.TXT` | a compressed entry split across 4 volumes |
+
+The crafted `rar20-solid.rar` is gone: its layout (an entry ending with the end
+of the block and the next block's header) was written by the removed encoder and
+no RAR 2.50 archive has it. `rar20-lz-text.rar`, `rar20-audio-1ch.rar`,
+`rar20-audio-4ch.rar`, `rar20-block-switches.rar` and `rar26-lz-audio.rar` stay:
+both backends extract them identically.
+
 ## Crafted
 
 These were assembled byte by byte by scripts written for this project (RAR 2.9
