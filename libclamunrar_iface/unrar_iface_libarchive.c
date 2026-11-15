@@ -121,6 +121,11 @@ static void unrar_dbgmsg(const char *str, ...)
     va_end(ap);
 }
 
+static void window_dbgmsg(const char *message)
+{
+    unrar_dbgmsg("%s\n", message);
+}
+
 typedef enum header_state_tag {
     HEADER_NONE = 0, /* No header read since the last extract or skip. */
     HEADER_READY,    /* A header was read and not yet consumed. */
@@ -1006,6 +1011,7 @@ cl_unrar_error_t unrar_open(const char *filename, void **hArchive, char **commen
     }
 
     unrar_debug = debug_flag;
+    __archive_rar_window_set_logger(window_dbgmsg);
 
     fd = open(filename, O_RDONLY | O_BINARY);
     if (fd < 0) {
@@ -1318,6 +1324,20 @@ cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint6
     h->skip_bytes_left    = max_bytes;
     h->skip_deadline_usec = deadline_usec;
     (void)archive_read_rar_set_output_bound(h->archive, max_bytes);
+    return UNRAR_OK;
+}
+
+cl_unrar_error_t unrar_set_temp_dir(void *hArchive, const char *dir)
+{
+    unrar_handle_t *h = (unrar_handle_t *)hArchive;
+
+    if (NULL == h) {
+        unrar_dbgmsg("unrar_set_temp_dir: Invalid arguments.\n");
+        return UNRAR_ERR;
+    }
+    if (ARCHIVE_OK != archive_read_rar_set_window_dir(h->archive, dir)) {
+        return UNRAR_ERR;
+    }
     return UNRAR_OK;
 }
 

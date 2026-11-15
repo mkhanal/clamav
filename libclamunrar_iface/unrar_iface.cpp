@@ -449,6 +449,19 @@ cl_unrar_error_t unrar_set_skip_limits(void* hArchive, uint64_t max_bytes, uint6
     return UNRAR_OK;
 }
 
+cl_unrar_error_t unrar_set_temp_dir(void* hArchive, const char* dir)
+{
+    (void)dir;
+
+    if (NULL == hArchive) {
+        unrar_dbgmsg("unrar_set_temp_dir: Invalid arguments.\n");
+        return UNRAR_ERR;
+    }
+
+    /* unRAR keeps its window in memory. */
+    return UNRAR_OK;
+}
+
 void unrar_close(void* hArchive)
 {
     RARCloseArchive(hArchive);

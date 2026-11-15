@@ -77,6 +77,11 @@ Example
 #PidFile /run/clamav/clamd.pid
 
 # Optional path to the global temporary directory.
+# With the libarchive RAR backend, a RAR5 decompression window above 64 MiB is
+# kept in an unnamed file here (mode 0600, no directory entry), so the kernel
+# can write it to disk under memory pressure. Free space needed: the window
+# size (up to 1 GiB) times concurrent scans of such archives. A tmpfs here
+# keeps the window in memory.
 # Default: system specific (usually /tmp or /var/tmp).
 #TemporaryDirectory /var/tmp
 
