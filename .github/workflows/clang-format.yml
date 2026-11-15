@@ -1,24 +1,27 @@
-name: clang-format
+name: ClamCove clang-format
 
-# Controls when the action will run. Triggers the workflow on push or pull request
-# events but only for the master branch
 on:
   push:
     branches:
-      - rel/*
-      - dev/*
-      - main
+      - release/**
   pull_request:
     branches:
-      - rel/*
-      - dev/*
-      - main
+      - release/**
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   formatting-check:
-    name: check
-    runs-on: ubuntu-latest
+    name: check ${{ matrix.path.check }}
+    runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
         path:
           - check: "libclamav"
@@ -31,15 +34,7 @@ jobs:
             exclude: ""
           - check: "clamconf"
             exclude: ""
-          - check: "clamd"
-            exclude: ""
-          - check: "clamdscan"
-            exclude: ""
           - check: "clamdtop"
-            exclude: ""
-          - check: "clamonacc"
-            exclude: "(c-thread-pool|fts|priv_fts)"
-          - check: "clamscan"
             exclude: ""
           - check: "clamsubmit"
             exclude: ""
@@ -47,19 +42,47 @@ jobs:
             exclude: ""
           - check: "libfreshclam"
             exclude: ""
-          - check: "common"
-            exclude: ""
           - check: "sigtool"
             exclude: ""
           - check: "examples"
             exclude: ""
           - check: "win32/compat"
             exclude: ""
+          - check: "libclamunrar_iface"
+            exclude: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run clang-format style check for C/C++ programs.
-        uses: jidicula/clang-format-action@v4.13.0
+        uses: jidicula/clang-format-action@654a770daa28443dd111d133e4083e21c1075674 # v4.18.0
         with:
           clang-format-version: "16"
           check-path: ${{ matrix.path['check'] }}
           exclude-regex: ${{ matrix.path['exclude'] }}
+
+  changed-lines:
+    name: check changed lines in clamd, clamdscan, clamonacc, clamscan, common
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install clang-format 16
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang-format-16
+      - name: Check the lines this change touches
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$BASE_REF" ]; then
+            base=$(git merge-base HEAD "origin/$BASE_REF")
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            base=$BEFORE
+          else
+            echo "skipped: no base to compare against"; exit 0
+          fi
+          out=$(git clang-format-16 --diff --extensions c,h,cpp,cc "$base" -- clamd clamdscan clamonacc clamscan common || true)
+          echo "$out"
+          case "$out" in
+            *"no modified files to format"*|*"did not modify any files"*) ;;
+            *) echo "::error::lines changed since $base are not clang-format 16 clean"; exit 1 ;;
+          esac
