@@ -8,10 +8,14 @@ libarchive), except where noted: every expected hash below is what unRAR
 extracts.
 """
 
+import hashlib
 import os
 import re
 import shutil
+import signal
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -917,3 +921,98 @@ class TC(testcase.TestCase):
 
         output = self.scan(testfile, '--alert-incomplete-rar=yes --allmatch')
         self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name), '{}: Heuristics.Incomplete.RAR FOUND'.format(testfile.name)])
+
+    WINDOW_SIZE = 256 << 20
+
+    def window_scan(self, tempdir):
+        """Start a scan of the RAR5 archive whose window is above the file-backed threshold."""
+        digest = hashlib.sha256()
+        zeros = bytes(1 << 20)
+        for _ in range(400):
+            digest.update(zeros)
+        digest.update(b'ClamAV-RAR-window-marker-3b9d71\n')
+        path_db = TC.path_tmp / 'large-window.hsb'
+        path_db.write_text('{}:419430432:RAR_WINDOW_ENTRY\n'.format(digest.hexdigest()))
+
+        tempdir.mkdir()
+        command = [str(TC.clamscan), '--max-filesize=2000M', '--max-scansize=4000M',
+                   '--tempdir={}'.format(tempdir), '-d', str(path_db),
+                   str(TC.path_rar / 'rar5-large-window.rar')]
+        return subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+    def window_mapping(self, process):
+        """The address range of the process' window mapping and its description, or None."""
+        try:
+            with open('/proc/{}/maps'.format(process.pid)) as maps:
+                for line in maps:
+                    fields = line.split()
+                    start, end = (int(x, 16) for x in fields[0].split('-'))
+                    if end - start == self.WINDOW_SIZE and 'rw-s' == fields[1] and line.rstrip().endswith('(deleted)'):
+                        return fields[0], line.rstrip()
+        except OSError:
+            pass
+        return None
+
+    def wait_for_window_mapping(self, process):
+        deadline = time.monotonic() + 120
+        while process.poll() is None and time.monotonic() < deadline:
+            mapping = self.window_mapping(process)
+            if mapping is not None:
+                return mapping
+        return None
+
+    def skip_unless_window_files_observable(self):
+        if TC.backend != 'libarchive':
+            self.skipTest('The RARLAB backend keeps its window in memory')
+        if not sys.platform.startswith('linux') or TC.valgrind != '':
+            self.skipTest('The mapping is read from /proc on Linux, without valgrind')
+
+    def test_large_rar5_window_is_an_unnamed_file_with_mode_0600(self):
+        self.step_name('Test a RAR5 window above the threshold is a mapping of an unnamed 0600 file')
+
+        self.skip_unless_window_files_observable()
+        tempdir = TC.path_tmp / 'window-tmp'
+        process = self.window_scan(tempdir)
+        try:
+            mapping = self.wait_for_window_mapping(process)
+            assert mapping is not None, 'no deleted file mapping of the window size was seen'
+            address_range, description = mapping
+            assert str(tempdir) in description, description
+
+            try:
+                inode = os.stat('/proc/{}/map_files/{}'.format(process.pid, address_range))
+            except PermissionError:
+                inode = None
+            if inode is not None:
+                assert inode.st_mode & 0o777 == 0o600, oct(inode.st_mode)
+                assert inode.st_nlink == 0
+                assert inode.st_uid == os.getuid()
+            assert not [name for _, _, names in os.walk(tempdir) for name in names if 'window' in name or name.startswith('#')]
+        finally:
+            process.kill()
+            process.communicate()
+
+    def test_large_rar5_window_gives_the_same_verdict(self):
+        self.step_name('Test the entry of a RAR5 archive with a file-backed window is extracted byte for byte')
+
+        self.skip_unless_window_files_observable()
+        process = self.window_scan(TC.path_tmp / 'window-verdict-tmp')
+        out, _ = process.communicate(timeout=300)
+        assert process.returncode == 1, out
+        assert 'RAR_WINDOW_ENTRY.UNOFFICIAL FOUND' in out, out
+
+    def test_killed_scan_leaves_no_window_file(self):
+        self.step_name('Test no window file survives a scan killed with SIGKILL')
+
+        self.skip_unless_window_files_observable()
+        tempdir = TC.path_tmp / 'window-kill-tmp'
+        process = self.window_scan(tempdir)
+        try:
+            assert self.wait_for_window_mapping(process) is not None, 'no window mapping was seen'
+        finally:
+            process.send_signal(signal.SIGKILL)
+            process.communicate()
+
+        leftovers = [name for _, _, names in os.walk(tempdir) for name in names
+                     if 'window' in name or name.startswith('#')]
+        assert leftovers == []
