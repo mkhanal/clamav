@@ -926,6 +926,11 @@ class TC(testcase.TestCase):
 
     def window_scan(self, tempdir):
         """Start a scan of the RAR5 archive whose window is above the file-backed threshold."""
+        tempdir.mkdir()
+        return self.window_scan_in(tempdir)
+
+    def window_scan_in(self, tempdir, prefix=(), extra=()):
+        """Start a scan of that archive with `tempdir`, an existing directory, as the temporary directory."""
         digest = hashlib.sha256()
         zeros = bytes(1 << 20)
         for _ in range(400):
@@ -934,10 +939,10 @@ class TC(testcase.TestCase):
         path_db = TC.path_tmp / 'large-window.hsb'
         path_db.write_text('{}:419430432:RAR_WINDOW_ENTRY\n'.format(digest.hexdigest()))
 
-        tempdir.mkdir()
-        command = [str(TC.clamscan), '--max-filesize=2000M', '--max-scansize=4000M',
-                   '--tempdir={}'.format(tempdir), '-d', str(path_db),
-                   str(TC.path_rar / 'rar5-large-window.rar')]
+        tempdir.mkdir(exist_ok=True)
+        command = list(prefix) + [str(TC.clamscan), '--max-filesize=2000M', '--max-scansize=4000M',
+                                  '--tempdir={}'.format(tempdir), '-d', str(path_db)] + list(extra) + [
+                                  str(TC.path_rar / 'rar5-large-window.rar')]
         return subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
     def window_mapping(self, process):
@@ -1016,3 +1021,56 @@ class TC(testcase.TestCase):
         leftovers = [name for _, _, names in os.walk(tempdir) for name in names
                      if 'window' in name or name.startswith('#')]
         assert leftovers == []
+
+    def skip_unless_linux_libarchive(self):
+        if TC.backend != 'libarchive':
+            self.skipTest('The RARLAB backend keeps its window in memory')
+        if not sys.platform.startswith('linux') or TC.valgrind != '':
+            self.skipTest('The scan is run under a limited file system on Linux, without valgrind')
+
+    def assert_window_scan_is_clean(self, process):
+        out, _ = process.communicate(timeout=300)
+        assert process.returncode == 1, 'returncode {}: {}'.format(process.returncode, out)
+        assert 'RAR_WINDOW_ENTRY.UNOFFICIAL FOUND' in out, out
+
+    def test_window_in_a_full_temporary_directory_is_in_memory(self):
+        self.step_name('Test a RAR5 window that does not fit the temporary directory is held in memory and the scan ends cleanly')
+
+        self.skip_unless_linux_libarchive()
+        if os.geteuid() != 0 or shutil.which('mount') is None or shutil.which('umount') is None:
+            self.skipTest('Mounting a small file system needs root')
+
+        tempdir = TC.path_tmp / 'window-full-tmp'
+        tempdir.mkdir()
+        mounted = subprocess.run(['mount', '-t', 'tmpfs', '-o', 'size=1m', 'tmpfs', str(tempdir)],
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if mounted.returncode != 0:
+            self.skipTest('Cannot mount a tmpfs: {}'.format(mounted.stdout.strip()))
+        try:
+            process = self.window_scan_in(tempdir, extra=['--debug'])
+            out, _ = process.communicate(timeout=300)
+        finally:
+            subprocess.run(['umount', str(tempdir)], check=True)
+
+        assert process.returncode in (0, 1), 'returncode {}: {}'.format(process.returncode, out)
+        assert re.search(r'RAR window: \d+ bytes in anonymous memory', out), out
+        assert 'in an unnamed file' not in out, out
+
+    def test_window_file_is_close_on_exec_from_creation(self):
+        self.step_name('Test the descriptor of a window file is created close-on-exec')
+
+        self.skip_unless_linux_libarchive()
+        if shutil.which('strace') is None:
+            self.skipTest('strace is needed to see how the file is opened')
+
+        tempdir = TC.path_tmp / 'window-cloexec-tmp'
+        tempdir.mkdir()
+        trace = TC.path_tmp / 'window-cloexec.strace'
+        process = self.window_scan_in(tempdir, prefix=['strace', '-f', '-e', 'trace=open,openat,openat2', '-o', str(trace)])
+        self.assert_window_scan_is_clean(process)
+
+        opened = [line for line in trace.read_text().splitlines()
+                  if str(tempdir) in line and ('O_TMPFILE' in line or 'O_EXCL' in line)]
+        assert opened, 'no window file was opened in the temporary directory'
+        for line in opened:
+            assert 'O_CLOEXEC' in line, line
