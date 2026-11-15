@@ -263,6 +263,21 @@ class TC(testcase.TestCase):
             with self.subTest(byte=name):
                 self.scan_damaged_copy('rar4-compressed-checked.rar', offset, size, sha256, 'rar4-compressed-checked.rar-' + name)
 
+    def test_solid_entry_after_one_failing_its_checksum(self):
+        self.step_name('Test the entry after one that fails its checksum in a solid RAR 2.9 archive')
+
+        # Byte 36 is the CRC32 of d/1-text.txt. Its data is intact, so the
+        # stream carries on and d/2-marker.txt, which holds the marker, is
+        # extracted.
+        damaged = TC.path_tmp / 'rar4-solid-ppmd-damaged-crc.rar'
+        data = bytearray((TC.path_rar / 'rar4-solid-ppmd.rar').read_bytes())
+        data[36] ^= 0xFF
+        damaged.write_bytes(data)
+
+        output = self.scan(damaged)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(damaged)])
+
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
 

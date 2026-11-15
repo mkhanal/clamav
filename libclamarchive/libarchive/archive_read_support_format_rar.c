@@ -1128,9 +1128,10 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
   default:
     /* Any method but "store" is decoded, as with unRAR. */
     ret = read_data_compressed(a, buff, size, offset, 0);
-    if (ret < ARCHIVE_WARN) {
-      /* Only on errors: at the end of an entry the PPMd model carries
-       * over to the next entry of a solid archive. */
+    if (ret < ARCHIVE_WARN && archive_errno(&a->archive) != ARCHIVE_RAR_ERRNO_CHECKSUM) {
+      /* Only on errors, and not a checksum mismatch after the whole entry
+       * was decoded: at the end of an entry the PPMd model carries over to
+       * the next entry of a solid archive. */
       __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
       rar->start_new_table = 1;
       rar->ppmd_valid = 0;
@@ -2454,6 +2455,7 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
       *buff = NULL;
       *size = 0;
       *offset = rar->offset;
+      rar->entry_eof = 1;
       if (rar->file_crc != rar->crc_calculated) {
 #ifndef DONT_FAIL_ON_CRC_ERROR
         archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_CHECKSUM,
@@ -2461,7 +2463,6 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
         return (ARCHIVE_FAILED);
 #endif
       }
-      rar->entry_eof = 1;
       return (ARCHIVE_EOF);
     }
 
