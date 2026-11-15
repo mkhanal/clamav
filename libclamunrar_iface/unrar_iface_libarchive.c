@@ -69,6 +69,7 @@
 
 #ifdef _WIN32
 #include <io.h>
+#include <windows.h>
 #endif
 
 #include <archive.h>
@@ -279,8 +280,13 @@ static char *next_volume_name(const char *path, int new_numbering)
 
 static int file_exists(const char *path)
 {
+#ifdef _WIN32
+    DWORD attributes = GetFileAttributesA(path);
+    return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
+#else
     struct stat st;
     return stat(path, &st) == 0 && !S_ISDIR(st.st_mode);
+#endif
 }
 
 static void free_volumes(unrar_handle_t *h)
@@ -807,7 +813,9 @@ static unsigned char *unpack_comment(const struct archive_rar_comment_info *cmt,
     file_head[1] = (unsigned char)((hcrc >> 8) & 0xff);
     memcpy(arc + pos, file_head, sizeof(file_head));
     pos += sizeof(file_head);
-    memcpy(arc + pos, cmt->data, cmt->size);
+    if (cmt->size > 0) {
+        memcpy(arc + pos, cmt->data, cmt->size);
+    }
     pos += cmt->size;
 
     hcrc   = archive_rar_crc32(arc + 7 + 2, sizeof(rar4_main) - 2);
@@ -957,7 +965,7 @@ static void read_comment(struct archive *a, char **comment, uint32_t *comment_si
 static cl_unrar_error_t header_error(unrar_handle_t *h, int r)
 {
     if (r == ARCHIVE_EOF) {
-        return UNRAR_BREAK;
+        return archive_read_rar_header_damaged(h->archive) ? UNRAR_ERR : UNRAR_BREAK;
     }
     if (archive_read_has_encrypted_entries(h->archive) > 0 && h->entry != NULL &&
         archive_entry_is_metadata_encrypted(h->entry)) {
@@ -1285,9 +1293,9 @@ cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint6
         unrar_dbgmsg("unrar_set_skip_limits: Invalid arguments.\n");
         return UNRAR_ERR;
     }
-    h->skip_bytes_limited   = max_bytes != 0;
-    h->skip_bytes_left      = max_bytes;
-    h->skip_deadline_usec   = deadline_usec;
+    h->skip_bytes_limited = max_bytes != 0;
+    h->skip_bytes_left    = max_bytes;
+    h->skip_deadline_usec = deadline_usec;
     return UNRAR_OK;
 }
 

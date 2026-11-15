@@ -107,6 +107,13 @@ int archive_read_rar_comment_info(struct archive *,
     struct archive_rar_comment_info *);
 
 /*
+ * True when a main or file header read so far failed its CRC. The reader goes
+ * on past it, as unRAR does, and unRAR reports an error once it has read to
+ * the end of such an archive.
+ */
+int archive_read_rar_header_damaged(struct archive *);
+
+/*
  * Skipping an entry of a solid archive means decoding it, because the
  * entries after it continue its stream. archive_read_rar_skip_data() skips
  * the current entry's data like archive_read_data_skip(), but gives up with
@@ -153,6 +160,7 @@ int __archive_read_rar5_entry_info(struct archive *,
     struct archive_rar_entry_info *);
 int __archive_read_rar5_comment_info(struct archive *,
     struct archive_rar_comment_info *);
+int __archive_read_rar5_header_damaged(struct archive *);
 
 /* Largest comment block, packed, the readers keep. */
 #define ARCHIVE_RAR_COMMENT_MAX (16 * 1024 * 1024)
