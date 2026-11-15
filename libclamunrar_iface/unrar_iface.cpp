@@ -342,6 +342,7 @@ cl_unrar_error_t unrar_peek_file_header(void* hArchive, unrar_metadata_t* file_m
     file_metadata->crc       = headerData.FileCRC;
     file_metadata->encrypted = (headerData.Flags & RHDF_ENCRYPTED) ? 1 : 0;
     file_metadata->is_dir    = (headerData.Flags & RHDF_DIRECTORY) ? 1 : 0;
+    file_metadata->is_link   = (headerData.RedirType != 0) ? 1 : 0;
     file_metadata->method    = headerData.Method;
 
     unrar_dbgmsg("unrar_peek_file_header:   Name:          %s\n", headerData.FileName);
@@ -389,6 +390,8 @@ cl_unrar_error_t unrar_extract_file(void* hArchive, const char* destPath, char* 
     process_file_ret = RARProcessFile(hArchive, RAR_EXTRACT, NULL, (char*)destPath);
     if (ERAR_BAD_DATA == process_file_ret) {
         unrar_dbgmsg("unrar_extract_file: Warning: Bad data/Invalid CRC. Attempting to scan anyways...\n");
+        status = UNRAR_EDATA;
+        goto done;
     } else if (ERAR_SUCCESS != process_file_ret) {
         status = unrar_retcode(process_file_ret);
         goto done;
@@ -430,6 +433,20 @@ cl_unrar_error_t unrar_skip_file(void* hArchive)
 done:
 
     return status;
+}
+
+cl_unrar_error_t unrar_set_skip_limits(void* hArchive, uint64_t max_bytes, uint64_t deadline_usec)
+{
+    (void)max_bytes;
+    (void)deadline_usec;
+
+    if (NULL == hArchive) {
+        unrar_dbgmsg("unrar_set_skip_limits: Invalid arguments.\n");
+        return UNRAR_ERR;
+    }
+
+    /* unRAR skips an entry by seeking over it, which costs nothing to bound. */
+    return UNRAR_OK;
 }
 
 void unrar_close(void* hArchive)
