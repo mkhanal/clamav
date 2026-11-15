@@ -7127,8 +7127,7 @@
     "files": [
      "clam.exe"
     ]
-   },
-   "backend_gap": "RAR 2.0 entries until the RAR 2.0 decoder is in"
+   }
   },
   {
    "id": "unit_tests__input__clamav_hdb_scanfiles__clam-v3.rar.xor",
