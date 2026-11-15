@@ -44,6 +44,7 @@
 #include "archive_ppmd7_private.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_rar_unpack20.h"
 #include "archive_read_rar_info.h"
 
 /* RAR signature, also known as the mark header */
@@ -346,6 +347,13 @@ struct rar
 
   int unp_ver;
 
+  /* RAR 2.0 / 2.6 decoder (unpack versions 20 and 26) */
+  struct rar20_decoder *dec20;
+  /* The decoder (see rar_decoder_class()) the solid stream is being read
+   * with, and whether this entry is in the stream with a different one. */
+  int solid_decoder;
+  char mixed_solid_decoders;
+
   /* LZSS members */
   struct huffman_code maincode;
   struct huffman_code offsetcode;
@@ -408,6 +416,7 @@ struct rar
    * whose data then starts at solid_base in the window. */
   char solid_state_valid;
   char end_marker_read;
+  char empty_entry_header_read;
   int64_t solid_base;
 
   /* Raw header fields for archive_read_rar_entry_info(). */
@@ -452,6 +461,9 @@ static int read_data_compressed(struct archive_read *, const void **, size_t *,
                                 int64_t *, size_t);
 static int rar_br_preparation(struct archive_read *, struct rar_br *);
 static int parse_codes(struct archive_read *);
+static int rar_prepare_window(struct archive_read *);
+static int prepare_rar20(struct archive_read *);
+static int expand20(struct archive_read *, int64_t *);
 static void free_codes(struct archive_read *);
 static int read_next_symbol(struct archive_read *, struct huffman_code *);
 static int create_code(struct archive_read *, struct huffman_code *,
@@ -756,6 +768,34 @@ ppmd_read(void *p)
   b = rar_br_bits(br, 8);
   rar_br_consume(br, 8);
   return b;
+}
+
+static int
+rar_is_rar20_version(int unp_ver)
+{
+  return (unp_ver == 20 || unp_ver == 26);
+}
+
+/* Entries of one solid stream must use the same decoder. */
+static int
+rar_decoder_class(int unp_ver)
+{
+  return (rar_is_rar20_version(unp_ver) ? 20 : unp_ver);
+}
+
+static int
+rar20_next_byte(void *ctx)
+{
+  struct archive_read *a = ctx;
+  struct rar *rar = a->format->data;
+  struct rar_br *br = &(rar->br);
+  int b;
+
+  if (!rar_br_read_ahead(a, br, 8))
+    return (-1);
+  b = rar_br_bits(br, 8);
+  rar_br_consume(br, 8);
+  return (b);
 }
 
 int
@@ -1076,6 +1116,34 @@ archive_read_format_rar_read_header(struct archive_read *a,
 }
 
 static int
+read_empty_entry_header20(struct archive_read *a)
+{
+  struct rar *rar = a->format->data;
+  int r;
+
+  rar->empty_entry_header_read = 1;
+  if (rar->dec20 == NULL || rar->mixed_solid_decoders ||
+      rar->packed_size <= 0 || (rar->file_flags & FHD_PASSWORD))
+    return (ARCHIVE_OK);
+  if ((r = rar_br_preparation(a, &rar->br)) < ARCHIVE_WARN)
+    return (r);
+  switch (rar20_decoder_read_header(rar->dec20, rar20_next_byte, a))
+  {
+  case RAR20_OK:
+    return (ARCHIVE_OK);
+  case RAR20_ERR_OUT_OF_DATA:
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                      "Truncated RAR file data");
+    rar->valid = 0;
+    return (ARCHIVE_FAILED);
+  default:
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                      "Bad RAR file data");
+    return (ARCHIVE_FAILED);
+  }
+}
+
+static int
 archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
                                   size_t *size, int64_t *offset)
 {
@@ -1093,12 +1161,15 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
   }
 
   /*
-   * Only the RAR 2.9 decoder (unpack version 29) is available. Data
-   * compressed for an older or newer version is not decoded: it is an
-   * error, never an empty success.
+   * Only the RAR 2.0 / 2.6 (unpack versions 20 and 26) and RAR 2.9
+   * (unpack version 29) decoders are available. Data compressed for
+   * another version, or an entry whose solid stream mixes decoders, is
+   * not decoded: it is an error, never an empty success.
    */
-  if (rar->compression_method != COMPRESS_METHOD_STORE &&
-      rar->unp_ver != 29) {
+  if (rar->compression_method >= COMPRESS_METHOD_FASTEST &&
+      rar->compression_method <= COMPRESS_METHOD_BEST &&
+      ((rar->unp_ver != 29 && !rar_is_rar20_version(rar->unp_ver)) ||
+       rar->mixed_solid_decoders)) {
     archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_UNSUPPORTED,
                       "Unsupported RAR unpack version %d", rar->unp_ver);
     rar->entry_eof = 1;
@@ -1106,6 +1177,12 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
   }
 
   *buff = NULL;
+  if (rar->unp_size == 0 && !rar->entry_eof && !rar->empty_entry_header_read &&
+      (rar->main_flags & MHD_SOLID) &&
+      rar->compression_method != COMPRESS_METHOD_STORE &&
+      rar_is_rar20_version(rar->unp_ver) &&
+      (ret = read_empty_entry_header20(a)) != ARCHIVE_OK)
+    return (ret);
   if (rar->entry_eof || rar->offset_seek >= rar->unp_size) {
     *size = 0;
     *offset = rar->offset;
@@ -1372,6 +1449,7 @@ archive_read_format_rar_cleanup(struct archive_read *a)
   free(rar->dbo);
   free(rar->unp_buffer);
   free(rar->lzss.window);
+  rar20_decoder_free(rar->dec20);
   free(rar->info_name);
   free(rar->comment_data);
   __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
@@ -2109,11 +2187,31 @@ read_header(struct archive_read *a, struct archive_entry *entry,
    * programs defined so far carry over in a solid stream, but a filter
    * still waiting for its block does not.
    */
+  rar->mixed_solid_decoders = 0;
+  if (rar->compression_method != COMPRESS_METHOD_STORE &&
+      continues_solid &&
+      rar->solid_decoder != rar_decoder_class(rar->unp_ver))
+    rar->mixed_solid_decoders = 1;
   if (rar->compression_method != COMPRESS_METHOD_STORE)
     init_filters(&rar->filters, continues_solid);
+  if (rar->compression_method != COMPRESS_METHOD_STORE &&
+      rar_is_rar20_version(rar->unp_ver) && !rar->mixed_solid_decoders)
+  {
+    if (rar->dec20 == NULL && (rar->dec20 = rar20_decoder_new()) == NULL)
+    {
+      archive_set_error(&a->archive, ENOMEM,
+                        "Can't allocate memory for the RAR 2.0 decoder");
+      return (ARCHIVE_FATAL);
+    }
+    rar20_decoder_begin_entry(rar->dec20, !continues_solid);
+  }
   if (rar->compression_method != COMPRESS_METHOD_STORE)
+  {
     rar->solid_state_valid = 1;
+    rar->solid_decoder = rar_decoder_class(rar->unp_ver);
+  }
   rar->end_marker_read = 0;
+  rar->empty_entry_header_read = 0;
   rar->solid_base = rar->lzss.position;
   rar->offset = rar->lzss.position;
   rar->offset_seek = 0;
@@ -2516,7 +2614,12 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
     if (!rar->br.next_in &&
       (ret = rar_br_preparation(a, &(rar->br))) < ARCHIVE_WARN)
       return (ret);
-    if (rar->start_new_table && ((ret = parse_codes(a)) < (ARCHIVE_WARN)))
+    if (rar_is_rar20_version(rar->unp_ver))
+    {
+      if (rar->start_new_table && ((ret = prepare_rar20(a)) < (ARCHIVE_WARN)))
+        return (ret);
+    }
+    else if (rar->start_new_table && ((ret = parse_codes(a)) < (ARCHIVE_WARN)))
       return (ret);
 
     {
@@ -2539,7 +2642,10 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
         end = rar->filters.filterstart;
       }
 
-      ret = expand(a, &end);
+      if (rar_is_rar20_version(rar->unp_ver))
+        ret = expand20(a, &end);
+      else
+        ret = expand(a, &end);
       if (ret != ARCHIVE_OK) {
         /*
          * Keep what was decoded before the damage, as unRAR does: hand
@@ -2833,6 +2939,23 @@ parse_codes(struct archive_read *a)
       return (r);
   }
 
+  if ((r = rar_prepare_window(a)) != ARCHIVE_OK)
+    return (r);
+
+  rar->start_new_table = 0;
+  return (ARCHIVE_OK);
+truncated_data:
+  archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                    "Truncated RAR file data");
+  rar->valid = 0;
+  return (ARCHIVE_FAILED);
+}
+
+static int
+rar_prepare_window(struct archive_read *a)
+{
+  struct rar *rar = a->format->data;
+
   if (!rar->dictionary_size || !rar->lzss.window ||
       (unsigned int)(rar->lzss.mask + 1) < rar->dictionary_size)
   {
@@ -2864,13 +2987,47 @@ parse_codes(struct archive_read *a)
     rar->lzss.mask = rar->dictionary_size - 1;
   }
 
+  return (ARCHIVE_OK);
+}
+
+static int
+prepare_rar20(struct archive_read *a)
+{
+  struct rar *rar = a->format->data;
+  int r;
+
+  if ((r = rar_prepare_window(a)) != ARCHIVE_OK)
+    return (r);
   rar->start_new_table = 0;
   return (ARCHIVE_OK);
-truncated_data:
-  archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                    "Truncated RAR file data");
-  rar->valid = 0;
-  return (ARCHIVE_FAILED);
+}
+
+static int
+expand20(struct archive_read *a, int64_t *end)
+{
+  struct rar *rar = a->format->data;
+  int64_t entry_end = rar->unp_size > INT64_MAX - rar->solid_base ?
+      INT64_MAX : rar->solid_base + rar->unp_size;
+  int r;
+
+  if (*end > entry_end)
+    *end = entry_end;
+  r = rar20_decoder_fill(rar->dec20, rar20_next_byte, a, rar->lzss.window,
+      (size_t)rar->lzss.mask, &rar->lzss.position, *end, entry_end);
+  switch (r)
+  {
+  case RAR20_OK:
+    return (ARCHIVE_OK);
+  case RAR20_ERR_OUT_OF_DATA:
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                      "Truncated RAR file data");
+    rar->valid = 0;
+    return (ARCHIVE_FAILED);
+  default:
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                      "Bad RAR file data");
+    return (ARCHIVE_FAILED);
+  }
 }
 
 static void

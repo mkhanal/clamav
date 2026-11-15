@@ -700,10 +700,6 @@ static unsigned skip_files(void)
 
     /* skip .rar files if unrar is disabled */
 #if HAVE_UNRAR
-#ifdef HAVE_UNRAR_LIBARCHIVE
-    /* clam-v2.rar is RAR 2.0 data, which the libarchive backend does not decode. */
-    skipped += 1;
-#endif
 #else
     skipped += 2;
 #endif

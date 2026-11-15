@@ -18,9 +18,6 @@ endif()
 
 if (ENABLE_UNRAR)
     add_definitions(-DHAVE_UNRAR)
-    if (ENABLE_UNRAR_LIBARCHIVE)
-        add_definitions(-DHAVE_UNRAR_LIBARCHIVE)
-    endif()
 endif()
 
 # The library the unrar interface is built on: RARLAB's libclamunrar, or the
