@@ -892,6 +892,8 @@ class TC(testcase.TestCase):
             self.skipTest('The RARLAB backend allocates the dictionary')
         if not sys.platform.startswith('linux') or TC.valgrind != '':
             self.skipTest('The address space is limited with ulimit -v on Linux, without valgrind')
+        if os.getenv('ASAN_OPTIONS') is not None or os.getenv('UBSAN_OPTIONS') is not None:
+            self.skipTest('A sanitizer reserves address space the limit does not leave')
 
         archive = self.solid_skip_archive(lambda h: h.set_compression(dictionary=13))
         testfile = self.write_rar5('solid-dictionary-1G-in-stream.rar', archive)
