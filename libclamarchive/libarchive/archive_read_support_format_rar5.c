@@ -149,6 +149,12 @@ struct file_header {
 	/* Why the entry cannot be extracted, or NULL: its data is skipped and
 	 * its extraction fails, while the headers after it are still read. */
 	const char* entry_error;
+
+	/* The compression info of the entry when its window was chosen from
+	 * it, and whether that choice is open to be made again: set until
+	 * the entry has a window buffer. */
+	uint64_t window_compression_info;
+	uint8_t window_chosen;
 };
 
 enum EXTRA {
@@ -366,6 +372,10 @@ struct rar5 {
 
 	/* Set while archive_read_rar_skip_data() is skipping. */
 	const struct archive_rar_skip_limit *skip_limit;
+
+	/* The most bytes the caller will take from the archive, or 0 for no
+	 * limit: no window needs to be larger than it. */
+	uint64_t output_bound;
 
 	/* Set to not zero if we're in block merging mode (i.e. when switching
 	 * to another file in multivolume archive, last block from 1st archive
@@ -1632,16 +1642,15 @@ static int header_overrun(struct archive_read* a)
 }
 
 /*
- * The smallest window an entry that starts a new stream needs: twice its
- * unpacked size, so a filter block never exceeds half of it, and no larger
- * than its dictionary. A dictionary larger than that is never reached by
- * the entry, so it does not change what the entry decodes to.
+ * The smallest window that holds `needed` bytes, no larger than the
+ * dictionary. A dictionary larger than the data written is never reached by
+ * it, so it does not change what the entry decodes to.
  */
-static uint64_t window_size_for(uint64_t dictionary, uint64_t unpacked_size)
+static uint64_t window_size_for(uint64_t dictionary, uint64_t needed)
 {
 	uint64_t size = g_unpack_window_size;
 
-	while(size < dictionary && size / 2 < unpacked_size)
+	while(size < dictionary && size < needed)
 		size <<= 1;
 
 	return size;
@@ -1680,23 +1689,39 @@ static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
 }
 
 /*
- * A solid stream shares one window between its entries, so it gets the
- * dictionary it declares; any other entry gets what it needs. An entry of
- * a stream that already has a window uses it, and a larger dictionary than
- * the window has grows it. Returns why the entry cannot be decoded, or
- * NULL.
+ * What the entry can write: what its header declares, and no more than the
+ * caller will take.
+ */
+static uint64_t entry_output(const struct rar5 *rar5, uint64_t unpacked_size)
+{
+	if(rar5->output_bound != 0 && unpacked_size > rar5->output_bound)
+		return rar5->output_bound;
+
+	return unpacked_size;
+}
+
+/*
+ * The window an entry needs is the stream it continues plus what the entry
+ * writes, twice what the entry writes for a filter block to fit, and no more
+ * than the dictionary it declares. The window is not sized from the
+ * dictionary alone: a header declares it for nothing. An entry of a stream
+ * that already has a window uses it, and one that needs more grows it.
+ * Returns why the entry cannot be decoded, or NULL.
  */
 static const char* select_window(struct rar5 *rar5, uint64_t compression_info,
     uint64_t unpacked_size)
 {
 	const uint64_t dictionary =
 	    (uint64_t) g_unpack_window_size << ((compression_info >> 10) & 15);
+	const uint64_t output = entry_output(rar5, unpacked_size);
+	const uint64_t stream = (uint64_t) rar5->cstate.solid_offset;
+	uint64_t needed = output > RAR5_MAX_WINDOW_SIZE ? output : output * 2;
 	uint64_t window_size;
 
 	if(rar5->main.solid || rar5->file.solid)
-		window_size = dictionary;
-	else
-		window_size = window_size_for(dictionary, unpacked_size);
+		needed = rar5_max(needed, stream + output);
+
+	window_size = window_size_for(dictionary, needed);
 
 	if(window_size > RAR5_MAX_WINDOW_SIZE)
 		return "Declared dictionary size is not supported";
@@ -1874,9 +1899,12 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 		rar5->cstate.data_encrypted = 0; /* Reset for new buffer */
 
 	if(entry_error == NULL && rar5->file.dir == 0 && c_method != STORE &&
-	    !rar5->cstate.switch_multivolume)
+	    !rar5->cstate.switch_multivolume) {
+		rar5->file.window_chosen = 1;
+		rar5->file.window_compression_info = compression_info;
 		entry_error = select_window(rar5, compression_info,
 		    unpacked_size);
+	}
 
 	rar5->file.entry_error = entry_error;
 	rar5->file.service = 0;
@@ -4608,6 +4636,28 @@ __archive_read_rar5_skip_data(struct archive *_a,
 	ret = archive_read_data_skip(_a);
 	rar5->skip_limit = NULL;
 	return ret;
+}
+
+int
+__archive_read_rar5_set_output_bound(struct archive *_a, uint64_t bound)
+{
+	struct rar5 *rar5 = rar5_info_state(_a);
+
+	if(rar5 == NULL)
+		return ARCHIVE_FATAL;
+	rar5->output_bound = bound;
+
+	/* The entry whose header was read before the bound was known has no
+	 * window buffer yet: size it again. */
+	if(rar5->file.window_chosen && rar5->cstate.window_buf == NULL &&
+	    !rar5->cstate.initialized)
+	{
+		rar5->file.entry_error = select_window(rar5,
+		    rar5->file.window_compression_info,
+		    (uint64_t) rar5->file.unpacked_size);
+	}
+
+	return ARCHIVE_OK;
 }
 
 int
