@@ -1231,42 +1231,6 @@ enum HEADER_FLAGS {
 	HFL_INHERITED = 0x0040
 };
 
-static int process_main_locator_extra_block(struct archive_read* a,
-    struct rar5 *rar5)
-{
-	uint64_t locator_flags;
-	int r;
-
-	enum LOCATOR_FLAGS {
-		QLIST = 0x01, RECOVERY = 0x02,
-	};
-
-	r = read_var(a, &locator_flags, NULL);
-	if(r != ARCHIVE_OK) {
-		return r;
-	}
-
-	if(locator_flags & QLIST) {
-		r = read_var(a, &rar5->qlist_offset, NULL);
-		if(r != ARCHIVE_OK) {
-			return r;
-		}
-
-		/* qlist is not used */
-	}
-
-	if(locator_flags & RECOVERY) {
-		r = read_var(a, &rar5->rr_offset, NULL);
-		if(r != ARCHIVE_OK) {
-			return r;
-		}
-
-		/* rr is not used */
-	}
-
-	return ARCHIVE_OK;
-}
-
 static int parse_file_extra_hash(struct archive_read* a, struct rar5 *rar5,
     int64_t* extra_data_size)
 {
@@ -2069,12 +2033,8 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 		/* Host OS is Unix */
 		archive_entry_set_mode(entry, (__LA_MODE_T) file_attr);
 	} else {
-		/* Unknown host OS */
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-				"Unsupported Host OS: 0x%jx",
-				(uintmax_t)host_os);
-
-		return ARCHIVE_FATAL;
+		/* Unknown host OS: a plain file, as nothing else is known. */
+		archive_entry_set_mode(entry, 0644 | AE_IFREG);
 	}
 
 	r = read_var_sized(a, &name_size, NULL);
@@ -2266,8 +2226,6 @@ static int process_head_main(struct archive_read* a, struct rar5 *rar5,
 {
 	int ret;
 	uint64_t extra_data_size = 0;
-	size_t extra_field_size = 0;
-	size_t extra_field_id = 0;
 	size_t archive_flags = 0;
 
 	enum MAIN_FLAGS {
@@ -2277,11 +2235,6 @@ static int process_head_main(struct archive_read* a, struct rar5 *rar5,
 		SOLID = 0x0004,          /* solid archive */
 		PROTECT = 0x0008,        /* contains Recovery info */
 		LOCK = 0x0010,           /* readonly flag, not used */
-	};
-
-	enum MAIN_EXTRA {
-		// Just one attribute here.
-		LOCATOR = 0x01,
 	};
 
 	(void) entry;
@@ -2333,45 +2286,8 @@ static int process_head_main(struct archive_read* a, struct rar5 *rar5,
 		return ARCHIVE_EOF;
 	}
 
-	if(extra_data_size == 0) {
-		/* Early return. */
-		return ARCHIVE_OK;
-	}
-
-	ret = read_var_sized(a, &extra_field_size, NULL);
-	if(ret != ARCHIVE_OK) {
-		return ret;
-	}
-
-	ret = read_var_sized(a, &extra_field_id, NULL);
-	if(ret != ARCHIVE_OK) {
-		return ret;
-	}
-
-	if(extra_field_size == 0) {
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-		    "Invalid extra field size");
-		return ARCHIVE_FATAL;
-	}
-
-	switch(extra_field_id) {
-		case LOCATOR:
-			ret = process_main_locator_extra_block(a, rar5);
-			if(ret != ARCHIVE_OK) {
-				/* Error while parsing main locator extra
-				 * block. */
-				return ret;
-			}
-
-			break;
-		default:
-			archive_set_error(&a->archive,
-			    ARCHIVE_ERRNO_FILE_FORMAT,
-			    "Unsupported extra type (0x%jx)",
-			    (uintmax_t)extra_field_id);
-			return ARCHIVE_FATAL;
-	}
-
+	/* The extra records of the main header (the locator among them) are
+	 * not used: the rest of the block is skipped by the caller. */
 	return ARCHIVE_OK;
 }
 
@@ -2550,14 +2466,9 @@ static int process_base_block(struct archive_read* a,
 
 	/* Verify the CRC32 of the header data. */
 	computed_crc = (uint32_t) __archive_crc32(0, p, (int) hdr_size);
-	if(computed_crc != hdr_crc) {
-#ifndef DONT_FAIL_ON_CRC_ERROR
-		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-		    "Header CRC error");
-
-		return ARCHIVE_FATAL;
-#endif
-	}
+	/* A header CRC mismatch does not stop the read, as with unRAR. */
+	(void) computed_crc;
+	(void) hdr_crc;
 
 	/* Remember the first byte of the block body so we can later skip
 	 * any bytes the sub-parser leaves unconsumed. */
