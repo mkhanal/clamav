@@ -88,6 +88,10 @@ static const unsigned char rar5_signature_xor[] = {
 };
 static const size_t g_unpack_window_size = 0x20000;
 
+/* An entry without a name is not extracted, but its data is part of the
+ * stream of a solid archive and is decoded when skipped. */
+static const char g_no_name_error[] = "No filename specified";
+
 /* The largest window allocated: the largest dictionary RAR5 archives
  * written by WinRAR for 64-bit systems use. Memory behind it is only
  * committed as the entry is decoded. */
@@ -155,6 +159,9 @@ struct file_header {
 	 * the entry has a window buffer. */
 	uint64_t window_compression_info;
 	uint8_t window_chosen;
+
+	/* The entry's error before its window was chosen. */
+	const char* base_error;
 };
 
 enum EXTRA {
@@ -1877,12 +1884,12 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 
 	rar5->file.dir = (uint8_t) ((file_flags & DIRECTORY) > 0);
 
-	if(entry_error == NULL && name_size == 0)
-		entry_error = "No filename specified";
-
 	if(entry_error == NULL)
 		entry_error = file_entry_sanity_checks(block_flags,
 		    rar5->file.dir, unpacked_size, data_size);
+
+	if(entry_error == NULL && name_size == 0)
+		entry_error = g_no_name_error;
 
 	c_method = (int) (compression_info >> 7) & 0x7;
 	c_version = (int) (compression_info & 0x3f);
@@ -1898,12 +1905,18 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	if(!rar5->file.solid)
 		rar5->cstate.data_encrypted = 0; /* Reset for new buffer */
 
-	if(entry_error == NULL && rar5->file.dir == 0 && c_method != STORE &&
+	if((entry_error == NULL || entry_error == g_no_name_error) &&
+	    rar5->file.dir == 0 && c_method != STORE &&
 	    !rar5->cstate.switch_multivolume) {
+		const char* window_error;
+
 		rar5->file.window_chosen = 1;
+		rar5->file.base_error = entry_error;
 		rar5->file.window_compression_info = compression_info;
-		entry_error = select_window(rar5, compression_info,
+		window_error = select_window(rar5, compression_info,
 		    unpacked_size);
+		if(window_error != NULL)
+			entry_error = window_error;
 	}
 
 	rar5->file.entry_error = entry_error;
@@ -4360,7 +4373,8 @@ static int rar5_read_data(struct archive_read *a, const void **buff,
 		return ARCHIVE_FAILED;
 	}
 
-	if(rar5->file.entry_error != NULL) {
+	if(rar5->file.entry_error != NULL &&
+	    !(rar5->skip_mode && rar5->file.entry_error == g_no_name_error)) {
 		/* The entry cannot be extracted; the archive can still be
 		 * read on. */
 		archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_UNSUPPORTED,
@@ -4437,7 +4451,8 @@ static int rar5_read_data_skip(struct archive_read *a) {
 	struct rar5 *rar5 = a->format->data;
 
 	if(rar5->main.solid && (rar5->cstate.data_encrypted == 0) &&
-	    !rar5->info.split_before && rar5->file.entry_error == NULL) {
+	    !rar5->info.split_before && (rar5->file.entry_error == NULL ||
+	    rar5->file.entry_error == g_no_name_error)) {
 		/* In solid archives, instead of skipping the data, we need to
 		 * extract it, and dispose the result. The side effect of this
 		 * operation will be setting up the initial window buffer state
@@ -4652,9 +4667,12 @@ __archive_read_rar5_set_output_bound(struct archive *_a, uint64_t bound)
 	if(rar5->file.window_chosen && rar5->cstate.window_buf == NULL &&
 	    !rar5->cstate.initialized)
 	{
-		rar5->file.entry_error = select_window(rar5,
+		const char* window_error = select_window(rar5,
 		    rar5->file.window_compression_info,
 		    (uint64_t) rar5->file.unpacked_size);
+
+		rar5->file.entry_error = window_error != NULL ?
+		    window_error : rar5->file.base_error;
 	}
 
 	return ARCHIVE_OK;
