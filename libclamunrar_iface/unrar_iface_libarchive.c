@@ -69,6 +69,7 @@
 
 #ifdef _WIN32
 #include <io.h>
+#include <windows.h>
 #endif
 
 #include <archive.h>
@@ -279,8 +280,13 @@ static char *next_volume_name(const char *path, int new_numbering)
 
 static int file_exists(const char *path)
 {
+#ifdef _WIN32
+    DWORD attributes = GetFileAttributesA(path);
+    return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
+#else
     struct stat st;
     return stat(path, &st) == 0 && !S_ISDIR(st.st_mode);
+#endif
 }
 
 static void free_volumes(unrar_handle_t *h)
@@ -1283,9 +1289,9 @@ cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint6
         unrar_dbgmsg("unrar_set_skip_limits: Invalid arguments.\n");
         return UNRAR_ERR;
     }
-    h->skip_bytes_limited   = max_bytes != 0;
-    h->skip_bytes_left      = max_bytes;
-    h->skip_deadline_usec   = deadline_usec;
+    h->skip_bytes_limited = max_bytes != 0;
+    h->skip_bytes_left    = max_bytes;
+    h->skip_deadline_usec = deadline_usec;
     return UNRAR_OK;
 }
 
