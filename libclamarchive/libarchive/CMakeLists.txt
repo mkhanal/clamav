@@ -63,6 +63,8 @@ SET(libarchive_SOURCES
   archive_private.h
   archive_random.c
   archive_random_private.h
+  archive_rar_unpack20.c
+  archive_rar_unpack20.h
   archive_rb.c
   archive_rb.h
   archive_read.c

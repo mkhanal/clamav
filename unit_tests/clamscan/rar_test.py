@@ -36,26 +36,8 @@ EXTRACTED = {
         (11200, '6b7a6404e2e03a3e5fc8d512f3ac85c9a5f18f0b590011077840c829d44798c4')],
     'rar4-ppmd-e8.rar': [
         (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
-    # RAR5 filters.
-    'rar5-filter-delta.rar': [
-        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
-    'rar5-filter-e8.rar': [
-        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
-}
-
-# RAR 1.5, 2.0 and 2.6 compression, including multimedia (audio) blocks and
-# solid streams, as RARLAB unRAR extracts it. The libarchive backend has no
-# decoder for it.
-EXTRACTED_BY_UNRAR_ONLY = {
-    'rar15-small.rar': [
-        (302, '6905378fc71be9665755071e77d712963f14a9e3ccab8a62fb30d42023ba8947')],
-    'rar15-solid.rar': [
-        (6002, '18c49e88aca59a47bbf4f9f773ddd1e7ff6554de06964b23fb0e98cbf8dd31b2'),
-        (5004, 'c55d6dcbbd23bb2ba40e95afd05fe54050a0cabf8e024b7d9452cc4d83b822f5'),
-        (3089, '5e4faafd9828d55b42d887e992cf84125a5b39154955f09c1f44625cc0c8a745')],
-    'rar15-rar20-solid.rar': [
-        (4001, '0ae02de111812f78bede44113962aa88c9634ec3d6d087a4b5a06f6f22a10e2d'),
-        (6000, '3a4be01ed3ebfe1169661947d6e0c690afd41d79bfd83a36187edc5c89ae323f')],
+    # RAR 2.0 and 2.6 compression, including multimedia (audio) blocks and
+    # solid streams.
     'rar20-lz-text.rar': [
         (20000, '8f026544474ace34d7c3c1744620611d32f9eb9d533521f948f1c9f75367538e')],
     'rar20-audio-1ch.rar': [
@@ -70,6 +52,25 @@ EXTRACTED_BY_UNRAR_ONLY = {
         (3500, '445ec62ce9e27c9f752dddc1d906350720012014261072dee5dc7cec435a0cd9')],
     'rar26-lz-audio.rar': [
         (9998, 'f0bc83e91397965891393014c78cf130fa4a6265e9aa2e3d5fe5644e57018c9c')],
+    # RAR5 filters.
+    'rar5-filter-delta.rar': [
+        (48000, '283fea56571bf5b805b7d3c3fefa48eb24f44ce9f2c8d031df4a8b8239ae4109')],
+    'rar5-filter-e8.rar': [
+        (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
+}
+
+# RAR 1.5 compression, as RARLAB unRAR extracts it. The libarchive backend has
+# no decoder for it.
+EXTRACTED_BY_UNRAR_ONLY = {
+    'rar15-small.rar': [
+        (302, '6905378fc71be9665755071e77d712963f14a9e3ccab8a62fb30d42023ba8947')],
+    'rar15-solid.rar': [
+        (6002, '18c49e88aca59a47bbf4f9f773ddd1e7ff6554de06964b23fb0e98cbf8dd31b2'),
+        (5004, 'c55d6dcbbd23bb2ba40e95afd05fe54050a0cabf8e024b7d9452cc4d83b822f5'),
+        (3089, '5e4faafd9828d55b42d887e992cf84125a5b39154955f09c1f44625cc0c8a745')],
+    'rar15-rar20-solid.rar': [
+        (4001, '0ae02de111812f78bede44113962aa88c9634ec3d6d087a4b5a06f6f22a10e2d'),
+        (6000, '3a4be01ed3ebfe1169661947d6e0c690afd41d79bfd83a36187edc5c89ae323f')],
 }
 
 
@@ -117,7 +118,7 @@ class TC(testcase.TestCase):
         return self.execute_command(command)
 
     def test_every_compression_version_and_filter_extracts_exactly(self):
-        self.step_name('Test RAR 2.9 filters and RAR5 filters extract byte for byte')
+        self.step_name('Test RAR 2.0 / 2.6 compression, RAR 2.9 filters and RAR5 filters extract byte for byte')
 
         for archive, entries in EXTRACTED.items():
             with self.subTest(archive=archive):
@@ -132,8 +133,8 @@ class TC(testcase.TestCase):
                 self.verify_output(output.out, expected=[
                     'RAR_ENTRY_{}.UNOFFICIAL FOUND'.format(index) for index in range(len(entries))])
 
-    def test_compression_before_rar_2_9_is_extracted_by_unrar_only(self):
-        self.step_name('Test RAR 1.5, 2.0 and 2.6 entries: extracted by unRAR, an extraction error without it')
+    def test_rar_1_5_compression_is_extracted_by_unrar_only(self):
+        self.step_name('Test RAR 1.5 entries: extracted by unRAR, an extraction error without it')
 
         for archive, entries in EXTRACTED_BY_UNRAR_ONLY.items():
             with self.subTest(archive=archive):
@@ -188,6 +189,26 @@ class TC(testcase.TestCase):
                 assert output.ec == 0  # clean
                 assert 'RAR: Error extracting file' in output.out + output.err
                 assert 'RAR: Extraction complete' not in output.out + output.err
+
+    def test_damaged_rar_2_0_data_is_not_extracted_as_intact(self):
+        self.step_name('Test RAR 2.0 / 2.6 data with one flipped byte is reported, not extracted as if it were intact')
+
+        if TC.backend == 'rarlab':
+            self.skipTest('unRAR hands over data whose checksum does not match, and it is scanned')
+
+        for archive in ('rar20-lz-text.rar', 'rar20-audio-1ch.rar', 'rar20-audio-4ch.rar',
+                        'rar20-block-switches.rar', 'rar20-solid.rar', 'rar26-lz-audio.rar'):
+            with self.subTest(archive=archive):
+                data = bytearray((TC.path_rar / archive).read_bytes())
+                data[len(data) // 2] ^= 0x01
+                damaged = TC.path_tmp / ('damaged-' + archive)
+                damaged.write_bytes(data)
+
+                output = self.scan(damaged, '--debug')
+                assert output.ec == 0  # clean
+                text = output.out + output.err
+                assert ('RAR: Error extracting file' in text or 'Bad RAR file data' in text or
+                        'Truncated RAR file data' in text)
 
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
