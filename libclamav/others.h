@@ -529,6 +529,7 @@ extern cl_unrar_error_t (*cli_unrar_open)(const char *filename, void **hArchive,
 extern cl_unrar_error_t (*cli_unrar_peek_file_header)(void *hArchive, unrar_metadata_t *file_metadata);
 extern cl_unrar_error_t (*cli_unrar_extract_file)(void *hArchive, const char *destPath, char *outputBuffer);
 extern cl_unrar_error_t (*cli_unrar_skip_file)(void *hArchive);
+extern cl_unrar_error_t (*cli_unrar_set_skip_limits)(void *hArchive, uint64_t max_bytes, uint64_t deadline_usec);
 extern void (*cli_unrar_close)(void *hArchive);
 
 extern LIBCLAMAV_EXPORT int have_rar;
@@ -558,6 +559,7 @@ extern LIBCLAMAV_EXPORT int have_rar;
 
 #define SCAN_HEURISTIC_BROKEN (ctx->options->heuristic & CL_SCAN_HEURISTIC_BROKEN)
 #define SCAN_HEURISTIC_BROKEN_MEDIA (ctx->options->heuristic & CL_SCAN_HEURISTIC_BROKEN_MEDIA)
+#define SCAN_HEURISTIC_INCOMPLETE_RAR (ctx->options->heuristic & CL_SCAN_HEURISTIC_INCOMPLETE_RAR)
 #define SCAN_HEURISTIC_EXCEEDS_MAX (ctx->options->heuristic & CL_SCAN_HEURISTIC_EXCEEDS_MAX)
 #define SCAN_HEURISTIC_PHISHING_SSL_MISMATCH (ctx->options->heuristic & CL_SCAN_HEURISTIC_PHISHING_SSL_MISMATCH)
 #define SCAN_HEURISTIC_PHISHING_CLOAK (ctx->options->heuristic & CL_SCAN_HEURISTIC_PHISHING_CLOAK)

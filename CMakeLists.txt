@@ -161,6 +161,21 @@ if(ENABLE_STATIC_LIB AND NOT ENABLE_SHARED_LIB AND ENABLE_UNRAR)
     set(UNRAR_LINKED 1)
 endif()
 
+if(ENABLE_UNRAR AND ENABLE_UNRAR_LIBARCHIVE)
+    # The libarchive backend carries no RARLAB code, so libclamav links it
+    # instead of loading it at run time: a missing backend then stops the
+    # program from starting rather than silently disabling RAR scanning.
+    set(UNRAR_LINKED 1)
+endif()
+
+if(NOT ENABLE_UNRAR)
+    set(UNRAR_BACKEND_NAME "none")
+elseif(ENABLE_UNRAR_LIBARCHIVE)
+    set(UNRAR_BACKEND_NAME "libarchive (vendored)")
+else()
+    set(UNRAR_BACKEND_NAME "RARLAB unRAR")
+endif()
+
 if(ENABLE_LIBCLAMAV_ONLY AND (ENABLE_APP OR ENABLE_EXAMPLES))
     # Remember when disabled options are disabled for later diagnostics.
     set(ENABLE_LIB_ONLY_DISABLED_OTHERS 1)
@@ -1024,7 +1039,7 @@ endif()
 #
 
 # Build targets for libraries.
-if(ENABLE_UNRAR)
+if(ENABLE_UNRAR AND NOT ENABLE_UNRAR_LIBARCHIVE)
     # Only build libclamunrar if enabled.
     # We still define the libclamunrar_iface's interface regardless,
     # so that libclamav will have unrar_iface.h in the include path.
@@ -1147,6 +1162,7 @@ ${b}        Build apps:         ${e}${ENABLE_APP}
 ${b}        Shared library:     ${e}${ENABLE_SHARED_LIB}
 ${b}        Static library:     ${e}${ENABLE_STATIC_LIB}
 ${b}        Enable UnRAR:       ${e}${ENABLE_UNRAR}
+${b}        UnRAR backend:      ${e}${UNRAR_BACKEND_NAME}
 ${b}        Examples:           ${e}${ENABLE_EXAMPLES}
 ${b}        Tests:              ${e}${ENABLE_TESTS}
 ${b}        Build man pages:    ${e}${ENABLE_MAN_PAGES}
