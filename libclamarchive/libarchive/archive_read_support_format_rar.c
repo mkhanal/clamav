@@ -3242,6 +3242,7 @@ expand(struct archive_read *a, int64_t *end)
         rar->start_new_table = rar_br_bits(br, 1);
         rar_br_consume(br, 1);
         rar->end_marker_read = 1;
+        rar->ppmd_eod = 1;
         *end = lzss_position(&rar->lzss);
         return (ARCHIVE_OK);
       }
