@@ -363,6 +363,9 @@ struct rar
   /* Filters */
   struct rar_filters filters;
 
+  /* Set while archive_read_rar_skip_data() is skipping. */
+  const struct archive_rar_skip_limit *skip_limit;
+
   /* PPMd Variant H members */
   char ppmd_valid;
   char ppmd_eod;
@@ -464,6 +467,7 @@ static int parse_filter(struct archive_read *, const uint8_t *, uint16_t,
                         uint8_t);
 static int run_filters(struct archive_read *);
 static void clear_filters(struct rar_filters *);
+static void init_filters(struct rar_filters *, int);
 static struct rar_filter *create_filter(struct rar_program_code *,
                                         const uint8_t *, uint32_t,
                                         uint32_t[8], size_t, uint32_t);
@@ -1098,21 +1102,34 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
   }
 
   /*
-   * unRAR rejects compressed entries of versions below 13 or above 29.
+   * Only the RAR 2.9 decoder (unpack version 29) is available. Data
+   * compressed for an older or newer version is not decoded: it is an
+   * error, never an empty success.
    */
   if (rar->compression_method >= COMPRESS_METHOD_FASTEST &&
-      rar->compression_method <= COMPRESS_METHOD_BEST) {
-    if (rar->unp_ver < 13 || rar->unp_ver > 29) {
-      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                        "Unsupported RAR unpack version %d", rar->unp_ver);
-      return (ARCHIVE_FAILED);
-    }
+      rar->compression_method <= COMPRESS_METHOD_BEST &&
+      rar->unp_ver != 29) {
+    archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_UNSUPPORTED,
+                      "Unsupported RAR unpack version %d", rar->unp_ver);
+    rar->entry_eof = 1;
+    return (ARCHIVE_FAILED);
   }
 
   *buff = NULL;
   if (rar->entry_eof || rar->offset_seek >= rar->unp_size) {
     *size = 0;
     *offset = rar->offset;
+    /* Stored data ends here, before read_data_stored() could check it. */
+    if (!rar->entry_eof && rar->compression_method == COMPRESS_METHOD_STORE) {
+      rar->entry_eof = 1;
+      if (rar->file_crc != rar->crc_calculated) {
+#ifndef DONT_FAIL_ON_CRC_ERROR
+        archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_CHECKSUM,
+                          "File CRC error");
+        return (ARCHIVE_FAILED);
+#endif
+      }
+    }
     return (ARCHIVE_EOF);
   }
 
@@ -1174,7 +1191,12 @@ archive_read_format_rar_read_data_skip(struct archive_read *a)
     int64_t offset;
 
     do {
+      if (__archive_rar_skip_limit_hit(a, rar->skip_limit, 0))
+        return (ARCHIVE_FATAL);
       ret = archive_read_format_rar_read_data(a, &buff, &size, &offset);
+      if ((ret == ARCHIVE_OK || ret == ARCHIVE_WARN) &&
+          __archive_rar_skip_limit_hit(a, rar->skip_limit, size))
+        return (ARCHIVE_FATAL);
     } while (ret == ARCHIVE_OK || ret == ARCHIVE_WARN);
     if (ret == ARCHIVE_FATAL)
       return (ret);
@@ -1463,6 +1485,47 @@ archive_read_rar_entry_info(struct archive *_a,
 }
 
 int
+__archive_rar_skip_limit_hit(struct archive_read *a,
+    const struct archive_rar_skip_limit *limit, uint64_t consumed)
+{
+  if (limit == NULL)
+    return (0);
+  if (limit->budget != NULL) {
+    if (consumed > *limit->budget) {
+      *limit->budget = 0;
+      archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_SKIP_LIMIT,
+                        "Skipping a solid RAR entry exceeded the size limit");
+      return (1);
+    }
+    *limit->budget -= consumed;
+  }
+  if (limit->stop != NULL && limit->stop(limit->stop_ctx)) {
+    archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_SKIP_LIMIT,
+                      "Skipping a solid RAR entry exceeded the time limit");
+    return (1);
+  }
+  return (0);
+}
+
+int
+archive_read_rar_skip_data(struct archive *_a,
+    const struct archive_rar_skip_limit *limit)
+{
+  struct archive_read *a;
+  int ret;
+
+  if ((a = rar_info_reader(_a, "rar")) != NULL) {
+    struct rar *rar = a->format->data;
+
+    rar->skip_limit = limit;
+    ret = archive_read_data_skip(_a);
+    rar->skip_limit = NULL;
+    return (ret);
+  }
+  return (__archive_read_rar5_skip_data(_a, limit));
+}
+
+int
 archive_read_rar_comment_info(struct archive *_a,
     struct archive_rar_comment_info *info)
 {
@@ -1541,6 +1604,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   struct rar_file_header file_header;
   int64_t header_size;
   unsigned filename_size, end;
+  int continues_solid;
   char *filename;
   char *strp;
   char packed_size[8];
@@ -2042,8 +2106,9 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   }
 
   rar->bytes_uncopied = rar->bytes_unconsumed = 0;
-  if (!(rar->file_flags & FHD_SOLID) || !rar->solid_state_valid ||
-      rar->compression_method == COMPRESS_METHOD_STORE)
+  continues_solid = (rar->file_flags & FHD_SOLID) && rar->solid_state_valid &&
+      rar->compression_method != COMPRESS_METHOD_STORE;
+  if (!continues_solid)
   {
     if (rar->compression_method != COMPRESS_METHOD_STORE)
       rar->solid_state_valid = 0;
@@ -2055,13 +2120,16 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
     rar->ppmd_valid = 0;
     rar->ppmd_escape = 2;
-    rar->filters.filterstart = INT64_MAX;
   }
   /*
    * Otherwise this entry continues the solid stream: the window, the
-   * tables, the PPMd model and the filters carry over, and its data starts
-   * where the previous entry's ended.
+   * tables and the PPMd model carry over, and its data starts where the
+   * previous entry's ended. Filters never span entries: the filter
+   * programs defined so far carry over in a solid stream, but a filter
+   * still waiting for its block does not.
    */
+  if (rar->compression_method != COMPRESS_METHOD_STORE)
+    init_filters(&rar->filters, continues_solid);
   if (rar->compression_method != COMPRESS_METHOD_STORE)
     rar->solid_state_valid = 1;
   rar->end_marker_read = 0;
@@ -2272,7 +2340,7 @@ read_data_stored(struct archive_read *a, const void **buff, size_t *size,
     *offset = rar->offset;
     if (rar->file_crc != rar->crc_calculated) {
 #ifndef DONT_FAIL_ON_CRC_ERROR
-      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+      archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_CHECKSUM,
                         "File CRC error");
       return (ARCHIVE_FAILED);
 #endif
@@ -2401,7 +2469,7 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
       *offset = rar->offset;
       if (rar->file_crc != rar->crc_calculated) {
 #ifndef DONT_FAIL_ON_CRC_ERROR
-        archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+        archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_CHECKSUM,
                           "File CRC error");
         return (ARCHIVE_FAILED);
 #endif
@@ -3883,6 +3951,23 @@ delete_filter(struct rar_filter *filter)
     free(filter->globaldata);
     free(filter);
     filter = next;
+  }
+}
+
+static void
+init_filters(struct rar_filters *filters, int keep_programs)
+{
+  delete_filter(filters->stack);
+  filters->stack = NULL;
+  filters->filterstart = INT64_MAX;
+  filters->lastend = 0;
+  filters->bytes = NULL;
+  filters->bytes_ready = 0;
+  if (!keep_programs)
+  {
+    delete_program_code(filters->progs);
+    filters->progs = NULL;
+    filters->lastfilternum = 0;
   }
 }
 
