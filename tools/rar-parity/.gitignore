@@ -1,0 +1,2 @@
+# libarchive SFX fixtures are Windows executables; keep only these re-included
+!fixtures/libarchive/*.exe

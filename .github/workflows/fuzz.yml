@@ -1,0 +1,85 @@
+name: ClamCove Fuzz
+
+on:
+  pull_request:
+    branches:
+      - release/**
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Fuzzing time in seconds
+        default: "1800"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  rar-backend:
+    name: libFuzzer unrar_iface (${{ github.event_name == 'pull_request' && 'time-boxed' || 'long' }})
+    runs-on: ubuntu-24.04
+    env:
+      FUZZ_SECONDS: ${{ github.event_name == 'pull_request' && '60' || inputs.seconds || '1800' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check inputs
+        id: inputs
+        run: |
+          if [ -f fuzz/clamav_unrar_iface_fuzzer.cpp ] && grep -q clamav_unrar_iface_fuzzer fuzz/CMakeLists.txt; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "skipped: fuzz/clamav_unrar_iface_fuzzer.cpp not present on this commit"
+            echo "### skipped: unrar_iface fuzz target not present" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Install dependencies
+        if: steps.inputs.outputs.present == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libclang-rt-dev bison flex check libbz2-dev \
+            libcurl4-openssl-dev libjson-c-dev libncurses-dev libpcre2-dev libssl-dev libxml2-dev pkg-config zlib1g-dev
+
+      - name: Build the fuzz target
+        if: steps.inputs.outputs.present == 'true'
+        env:
+          CC: clang
+          CXX: clang++
+          SANITIZER: address
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_FUZZ=ON -DENABLE_UNRAR_LIBARCHIVE=ON
+          cmake --build build --target clamav_unrar_iface_fuzzer --parallel
+
+      - name: Restore the corpus
+        if: steps.inputs.outputs.present == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+
+      - name: Fuzz
+        if: steps.inputs.outputs.present == 'true'
+        run: |
+          mkdir -p corpus crashes seeds
+          for d in fuzz/regression tools/rar-parity/fixtures unit_tests/input unit_tests/clamscan; do
+            [ -d "$d" ] && find "$d" -type f \( -name '*.rar' -o -name '*.r[0-9][0-9]' -o -name '*sfx.exe' \) -size -2M -exec cp -n {} seeds/ \; || true
+          done
+          echo "seeds: $(ls seeds | wc -l)"
+          find build -name clamav_unrar_iface_fuzzer -type f | head -1 > fuzzer.path
+          "$(cat fuzzer.path)" -max_total_time="$FUZZ_SECONDS" -rss_limit_mb=4096 -timeout=60 \
+            -artifact_prefix=crashes/ corpus seeds
+
+      - name: Upload crashes
+        if: failure() && steps.inputs.outputs.present == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-crashes
+          path: crashes/
+          if-no-files-found: ignore
