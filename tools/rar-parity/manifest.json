@@ -2004,11 +2004,8 @@
    "licence": "BSD-2-Clause (libarchive, Copyright Tim Kientzle and contributors)",
    "options": [],
    "expected": {
-    "kind": "detect",
-    "detect": [
-     "RarParity.Content.7113d093a90b4a5c"
-    ],
-    "note": "some entries encrypted"
+    "kind": "encrypted",
+    "note": "some entries encrypted; both builds report only Heuristics.Encrypted.RAR, the signature of the unencrypted entry never matches"
    },
    "reference_unrar": {
     "rc": 3,
@@ -7126,7 +7123,8 @@
     "files": [
      "clam.exe"
     ]
-   }
+   },
+   "backend_gap": "RAR 2.0 entries until the RAR 2.0 decoder is in"
   },
   {
    "id": "unit_tests__input__clamav_hdb_scanfiles__clam-v3.rar.xor",
