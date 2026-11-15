@@ -532,6 +532,18 @@ class TC(testcase.TestCase):
         assert output.ec == 1  # virus
         self.verify_output(output.out, expected=['{}: PendingFilterMarker.UNOFFICIAL FOUND'.format(testfile.name)])
 
+    def test_split_entry_parts_with_different_unpack_versions(self):
+        self.step_name('Test a split entry whose continuation declares another unpack version is not decoded')
+
+        # The first part is RAR 2.9 and the continuation header declares
+        # unpack version 20. The entry is not decoded with a decoder it was
+        # not set up for; the scan ends clean without a crash.
+        testfile = TC.path_rar / 'rar4-split-unpack-version-change.rar'
+        output = self.scan(testfile)
+
+        assert output.ec == 0  # clean
+        self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
+
     def test_skipping_in_a_solid_archive_is_bounded(self):
         self.step_name('Test the work of skipping entries of a solid archive is bounded by the scan size')
 

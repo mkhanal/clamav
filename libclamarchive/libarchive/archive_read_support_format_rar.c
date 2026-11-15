@@ -1720,6 +1720,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   int64_t header_size;
   unsigned filename_size, end;
   int continues_solid;
+  int entry_method, entry_unp_ver;
   char *filename;
   char *strp;
   char packed_size[8];
@@ -1757,6 +1758,9 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   }
   crc32_computed = __archive_crc32(0, (const unsigned char *)p + 2, 7 - 2);
   __archive_read_consume(a, 7);
+
+  entry_method = rar->compression_method;
+  entry_unp_ver = rar->unp_ver;
 
   /* A solid entry keeps the previous entry's times and mode until its own
    * header sets them; the decoder state is kept further down. */
@@ -2104,6 +2108,15 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     filename_size == rar->filename_save_size &&
     !memcmp(rar->filename, rar->filename_save, filename_size + 1))
   {
+    if (rar->compression_method != entry_method ||
+        rar->unp_ver != entry_unp_ver)
+    {
+      rar->compression_method = entry_method;
+      rar->unp_ver = entry_unp_ver;
+      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+        "Mismatch of file parts split across multi-volume archive");
+      return (ARCHIVE_FATAL);
+    }
     __archive_read_consume(a, header_size - 7);
     rar->br.avail_in = 0;
     rar->br.next_in = NULL;
