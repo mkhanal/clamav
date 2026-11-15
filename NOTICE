@@ -1,0 +1,18 @@
+ClamCove
+
+ClamCove is a distribution of ClamAV, based on ClamAV by Cisco Systems, Inc.
+(https://www.clamav.net/, https://github.com/Cisco-Talos/clamav).
+
+ClamAV is a trademark of Cisco. ClamCove is not affiliated with or endorsed
+by Cisco or the ClamAV project, and is not an official ClamAV release.
+
+ClamCove is licensed under the GNU General Public License, version 2, as is
+ClamAV; see COPYING. Third-party components keep their own licences; see
+COPYING/ and COPYING.txt.
+
+The differences from upstream ClamAV 1.5.4, each with its upstream status, are
+listed in the table at the top of README.md.
+
+Version output carries the ClamAV version first and unchanged, followed by the
+distribution: "ClamAV 1.5.4 (ClamCove 1.5.4.1)". The distribution release
+number is the CMake variable CLAMCOVE_RELEASE.
