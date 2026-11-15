@@ -66,6 +66,11 @@ jobs:
           cd "$RUNNER_TEMP/src/$OUT"
           git apply --binary -p1 "$RUNNER_TEMP/changes.patch"
 
+      - name: Split the changes into patches
+        run: |
+          mkdir -p dist
+          .github/dist/split-changes.sh "clamav-$VERSION" "$TAG" "$OUT" dist
+
       - name: Pack reproducibly
         run: |
           mkdir -p dist
@@ -77,10 +82,18 @@ jobs:
       - name: Attach to the release
         run: |
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "ClamCove $REV" \
-              --notes "ClamCove $REV, based on ClamAV $VERSION. Complete corresponding source: the official clamav-$VERSION.tar.gz with the changes of tag $TAG applied (SHA-256 in $OUT.tar.gz.sha256). Container image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV. Not affiliated with or endorsed by Cisco or the ClamAV project."
+            {
+              echo "ClamCove $REV, based on ClamAV $VERSION. Not affiliated with or endorsed by Cisco or the ClamAV project."
+              echo
+              echo "Complete corresponding source: \`$OUT.tar.gz\`, the official clamav-$VERSION.tar.gz with the changes of tag $TAG applied (SHA-256 in \`$OUT.tar.gz.sha256\`)."
+              echo "Container image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV\`."
+              echo
+              echo "Patches, one per change, to apply in order to the official source:"
+              cat dist/release-notes-patches.md
+            } > dist/release-notes.md
+            gh release create "$TAG" --verify-tag --title "ClamCove $REV" --notes-file dist/release-notes.md
           fi
-          gh release upload "$TAG" "dist/$OUT.tar.gz" "dist/$OUT.tar.gz.sha256"
+          gh release upload "$TAG" "dist/$OUT.tar.gz" "dist/$OUT.tar.gz.sha256" dist/*.patch
 
   image:
     name: container image
