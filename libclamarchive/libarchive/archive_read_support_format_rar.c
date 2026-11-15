@@ -969,16 +969,11 @@ archive_read_format_rar_read_header(struct archive_read *a,
           !(rar->main_flags & MHD_PASSWORD) &&
           read_main_header_comment(a, p, (size_t)skip) < ARCHIVE_WARN)
         return (ARCHIVE_FATAL);
-      if (rar->main_flags & MHD_ENCRYPTVER) {
-        if ((size_t)skip <
-            7 + sizeof(rar->reserved1) + sizeof(rar->reserved2) + 1) {
-          archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-            "Invalid header size");
-          return (ARCHIVE_FATAL);
-        }
+      if ((rar->main_flags & MHD_ENCRYPTVER) &&
+          (size_t)skip >=
+            7 + sizeof(rar->reserved1) + sizeof(rar->reserved2) + 1)
         rar->encryptver = *(p + 7 + sizeof(rar->reserved1) +
                             sizeof(rar->reserved2));
-      }
 
       /* Main header is password encrypted, so we cannot read any
          file names or any other info about files from the header. */
@@ -996,13 +991,8 @@ archive_read_format_rar_read_header(struct archive_read *a,
        * cover only the 13-byte main header with its CRC. */
       crc32_val = __archive_crc32(0, (const unsigned char *)p + 2,
           (rar->main_flags & MHD_COMMENT) ? 13 - 2 : (unsigned)skip - 2);
-      if ((crc32_val & 0xffff) != archive_le16dec(p)) {
-#ifndef DONT_FAIL_ON_CRC_ERROR
-        archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-          "Header CRC error");
-        return (ARCHIVE_FATAL);
-#endif
-      }
+      /* A header CRC mismatch does not stop the read, as with unRAR. */
+      (void)crc32_val;
       __archive_read_consume(a, skip);
       break;
 
@@ -1015,6 +1005,7 @@ archive_read_format_rar_read_header(struct archive_read *a,
     case PROTECT_HEAD:
     case SIGN_HEAD:
     case ENDARC_HEAD:
+    default:
       flags = archive_le16dec(p + 3);
       skip = archive_le16dec(p + 5);
       if (skip < 7) {
@@ -1075,11 +1066,6 @@ archive_read_format_rar_read_header(struct archive_read *a,
       if ((ret = read_header(a, entry, head_type)) < ARCHIVE_WARN)
         return ret;
       break;
-
-    default:
-      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                        "Bad RAR file");
-      return (ARCHIVE_FATAL);
     }
   }
 }
@@ -1106,8 +1092,7 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
    * compressed for an older or newer version is not decoded: it is an
    * error, never an empty success.
    */
-  if (rar->compression_method >= COMPRESS_METHOD_FASTEST &&
-      rar->compression_method <= COMPRESS_METHOD_BEST &&
+  if (rar->compression_method != COMPRESS_METHOD_STORE &&
       rar->unp_ver != 29) {
     archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_UNSUPPORTED,
                       "Unsupported RAR unpack version %d", rar->unp_ver);
@@ -1139,11 +1124,8 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
     ret = read_data_stored(a, buff, size, offset);
     break;
 
-  case COMPRESS_METHOD_FASTEST:
-  case COMPRESS_METHOD_FAST:
-  case COMPRESS_METHOD_NORMAL:
-  case COMPRESS_METHOD_GOOD:
-  case COMPRESS_METHOD_BEST:
+  default:
+    /* Any method but "store" is decoded, as with unRAR. */
     ret = read_data_compressed(a, buff, size, offset, 0);
     if (ret < ARCHIVE_WARN) {
       /* Only on errors: at the end of an entry the PPMd model carries
@@ -1152,12 +1134,6 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
       rar->start_new_table = 1;
       rar->ppmd_valid = 0;
     }
-    break;
-
-  default:
-    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                      "Unsupported compression method for RAR file");
-    ret = ARCHIVE_FAILED;
     break;
   }
   return (ret);
@@ -1685,14 +1661,14 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     crc32_computed = __archive_crc32(crc32_computed, h, (unsigned)crc_size);
   }
   crc32_read = archive_le16dec(rar_header.crc);
-  if ((crc32_computed & 0xffff) != crc32_read) {
-#ifndef DONT_FAIL_ON_CRC_ERROR
+  /* A header CRC mismatch does not stop the read, as with unRAR, unless the
+   * header carries a file comment, which unRAR does not read past. */
+  if ((crc32_computed & 0xffff) != crc32_read &&
+      (rar->file_flags & FHD_COMMENT)) {
     archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
       "Header CRC error");
     return (ARCHIVE_FATAL);
-#endif
   }
-  /* If no CRC error, go on parsing File Header. */
   p = h;
   endp = p + header_size - 7;
   memcpy(&file_header, p, sizeof(file_header));
@@ -1750,11 +1726,8 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   rar->bytes_remaining = rar->packed_size;
 
   filename_size = archive_le16dec(file_header.name_size);
-  if (p + filename_size > endp) {
-    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-      "Invalid filename size");
-    return (ARCHIVE_FATAL);
-  }
+  if (p + filename_size > endp)
+    filename_size = (unsigned)(endp - p); /* a name cut short ends with the header, as with unRAR */
 
   if (head_type == NEWSUB_HEAD) {
     int64_t skip;
@@ -2054,22 +2027,16 @@ read_header(struct archive_read *a, struct archive_entry *entry,
 
   if (rar->file_flags & FHD_SALT)
   {
-    if (p + 8 > endp) {
-      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-        "Invalid header size");
-      return (ARCHIVE_FATAL);
+    /* A salt that does not fit in the header is left out, as with unRAR. */
+    if (p + 8 <= endp) {
+      memcpy(rar->salt, p, 8);
+      p += 8;
     }
-    memcpy(rar->salt, p, 8);
-    p += 8;
   }
 
-  if (rar->file_flags & FHD_EXTTIME) {
-    if (read_exttime(p, rar, endp) < 0) {
-      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-        "Invalid header size");
-      return (ARCHIVE_FATAL);
-    }
-  }
+  /* Times that do not fit in the header are left out, as with unRAR. */
+  if (rar->file_flags & FHD_EXTTIME)
+    (void)read_exttime(p, rar, endp);
 
   __archive_read_consume(a, header_size - 7);
   if (rar->packed_size > INT64_MAX - a->filter->position) {
@@ -2085,6 +2052,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   case OS_MSDOS:
   case OS_OS2:
   case OS_WIN32:
+  default: /* an unknown host is read as Windows, which cannot make a link */
     rar->mode = (__LA_MODE_T)archive_le32dec(file_header.file_attr);
     if (rar->mode & FILE_ATTRIBUTE_DIRECTORY)
       rar->mode = AE_IFDIR | S_IXUSR | S_IXGRP | S_IXOTH;
@@ -2098,11 +2066,6 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   case OS_BEOS:
     rar->mode = (__LA_MODE_T)archive_le32dec(file_header.file_attr);
     break;
-
-  default:
-    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                      "Unknown file attributes from RAR file's host OS");
-    return (ARCHIVE_FATAL);
   }
 
   rar->bytes_uncopied = rar->bytes_unconsumed = 0;

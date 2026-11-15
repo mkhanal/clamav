@@ -214,6 +214,20 @@ class TC(testcase.TestCase):
             with self.subTest(byte=name):
                 self.scan_damaged_copy('rar5-compressed-checked.rar', offset, size, sha256, 'rar5-compressed-checked.rar-' + name)
 
+    def test_rar4_entry_is_extracted_when_a_header_fails_its_check(self):
+        self.step_name('Test the entry of a RAR 2.9 archive is extracted when a header field is damaged')
+
+        # rar4-compressed-checked.rar has one entry. Bytes 7 and 20 start the CRC16 of the main and the file header, 35 is the file header's host OS, 45 its method and 46 the size of its name. unRAR reads on past all of them.
+        for offset, name, (size, sha256) in (
+            (7, 'main-crc', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (20, 'file-crc', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (35, 'host-os', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (45, 'method', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (46, 'name-size', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+        ):
+            with self.subTest(byte=name):
+                self.scan_damaged_copy('rar4-compressed-checked.rar', offset, size, sha256, 'rar4-compressed-checked.rar-' + name)
+
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
 
