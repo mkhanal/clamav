@@ -9,6 +9,7 @@ from multiprocessing import Process, Pipe
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import unittest
 from functools import partial
@@ -93,6 +94,7 @@ class TC(testcase.TestCase):
 
         expected_stdout = [
             'ClamAV {}'.format(TC.version),
+            re.escape('(ClamCove {})'.format(TC.clamcove_version)),
         ]
 
         # verify stdout

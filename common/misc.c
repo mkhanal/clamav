@@ -72,6 +72,11 @@ const char *get_version(void)
     return VERSION "" VERSION_SUFFIX;
 }
 
+const char *get_distribution_suffix(void)
+{
+    return " (ClamCove " CLAMCOVE_VERSION ")";
+}
+
 char *freshdbdir(void)
 {
     struct cl_cvd *d1, *d2;
@@ -138,7 +143,7 @@ void print_version(const char *dbdir)
         pt = fdbdir = freshdbdir();
 
     if (!pt) {
-        printf("ClamAV %s\n", get_version());
+        printf("ClamAV %s%s\n", get_version(), get_distribution_suffix());
         return;
     }
 
@@ -174,9 +179,11 @@ void print_version(const char *dbdir)
         free(fdbdir);
 
     if (db_version) {
-        printf("ClamAV %s/%u/%s", get_version(), db_version, ctime(&db_time));
+        char timestr[32];
+        const char *tstr = cli_ctime(&db_time, timestr, sizeof(timestr));
+        printf("ClamAV %s/%u/%.*s%s\n", get_version(), db_version, (int)strcspn(tstr, "\n"), tstr, get_distribution_suffix());
     } else {
-        printf("ClamAV %s\n", get_version());
+        printf("ClamAV %s%s\n", get_version(), get_distribution_suffix());
     }
 
     free(path);
