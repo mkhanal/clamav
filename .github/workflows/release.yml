@@ -18,8 +18,26 @@ permissions:
   contents: read
 
 jobs:
+  version:
+    name: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Source, README and NOTICE name one release, and the tag names it
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            .github/dist/check-version.sh "$REF_NAME"
+          else
+            .github/dist/check-version.sh
+          fi
+
   patches:
     name: release patches
+    needs: version
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
