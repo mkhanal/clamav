@@ -1,4 +1,4 @@
-.TH "Clamdtop" "1" "February 22, 2009" "ClamAV @VERSION@" "Clam AntiVirus"
+.TH "Clamdtop" "1" "February 22, 2009" "ClamCove @CLAMCOVE_VERSION@" "Clam AntiVirus"
 .SH "NAME"
 .LP 
 clamdtop \- monitor the Clam AntiVirus Daemon

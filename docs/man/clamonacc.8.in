@@ -1,4 +1,4 @@
-.TH "Clam On-Access Scanner" "8" "July 29, 2020" "ClamAV @VERSION@" "Clam AntiVirus"
+.TH "Clam On-Access Scanner" "8" "July 29, 2020" "ClamCove @CLAMCOVE_VERSION@" "Clam AntiVirus"
 .SH "NAME"
 .LP
 clamonacc \- an anti\-virus on\-access scanning daemon and clamd client
