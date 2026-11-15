@@ -2227,10 +2227,9 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   rar->bytes_uncopied = rar->bytes_unconsumed = 0;
   continues_solid = (rar->file_flags & FHD_SOLID) && rar->solid_state_valid &&
       rar->compression_method != COMPRESS_METHOD_STORE;
-  if (!continues_solid)
+  if (!continues_solid && rar->compression_method != COMPRESS_METHOD_STORE)
   {
-    if (rar->compression_method != COMPRESS_METHOD_STORE)
-      rar->solid_state_valid = 0;
+    rar->solid_state_valid = 0;
     rar->lzss.position = 0;
     rar->dictionary_size = 0;
     rar->is_ppmd_block = 0;
