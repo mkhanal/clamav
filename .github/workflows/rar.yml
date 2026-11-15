@@ -135,7 +135,7 @@ jobs:
             exit 0
           fi
           python3 tools/rar-parity/compare.py --a prefix:/opt/clamav-official --b prefix:/opt/clamav-libarchive \
-            --extra-options=--alert-incomplete-rar=yes --json parity-alert.json
+            --b-extra-options=--alert-incomplete-rar=yes --json parity-alert.json
 
       - name: Upload parity results
         if: always() && steps.inputs.outputs.present == 'true'
