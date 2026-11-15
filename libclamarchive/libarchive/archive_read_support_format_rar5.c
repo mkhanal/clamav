@@ -323,7 +323,8 @@ struct main_header {
 	/* If this a multi-file archive? */
 	uint8_t volume : 1;
 	uint8_t endarc : 1;
-	uint8_t notused : 5;
+	uint8_t seen : 1;
+	uint8_t notused : 4;
 
 	unsigned int vol_no;
 };
@@ -2466,7 +2467,9 @@ static int process_base_block(struct archive_read* a,
 	/* Read the whole header data into memory, maximum memory use here is
 	 * 2MB. */
 	if(!read_ahead(a, hdr_size, &p)) {
-		return ARCHIVE_EOF;
+		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+		    "Truncated header");
+		return ARCHIVE_FATAL;
 	}
 
 	/* Verify the CRC32 of the header data. */
@@ -2501,6 +2504,7 @@ static int process_base_block(struct archive_read* a,
 	/* Those are possible header ids in RARv5. */
 	switch(header_id) {
 		case HEAD_MAIN:
+			rar5->main.seen = 1;
 			ret = process_head_main(a, rar5, entry, header_flags);
 
 			/* Main header doesn't have any files in it, so it's
@@ -2670,6 +2674,13 @@ static int rar5_read_header(struct archive_read *a,
 		ret = process_base_block(a, entry);
 	} while(ret == ARCHIVE_RETRY ||
 			(rar5->main.endarc > 0 && ret == ARCHIVE_OK));
+
+	/* An archive without a main header is not an archive. */
+	if(ret == ARCHIVE_EOF && !rar5->main.seen) {
+		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+		    "No main header");
+		return ARCHIVE_FATAL;
+	}
 
 	return ret;
 }
