@@ -900,8 +900,6 @@ class TC(testcase.TestCase):
         # The first header declares 1000 bytes; the header of the piece in the
         # next volume says the size is unknown. Decoding stops at 1000 bytes,
         # as unRAR writes no more, instead of running on through 600 MB.
-        if TC.backend != 'libarchive':
-            self.skipTest('The RARLAB backend is not bounded by this')
 
         testfile = self.split_zeros_entry('continuation-unknown-size.rar', 1000, 629145600, True)
 
@@ -920,8 +918,6 @@ class TC(testcase.TestCase):
         # of zeros are found only when the whole entry is decoded; an entry
         # that ended early and cleanly would not be, nor would it be reported
         # as incomplete.
-        if TC.backend != 'libarchive':
-            self.skipTest('The RARLAB backend reads volumes with its own reader')
 
         digest = hashlib.sha256()
         zeros = bytes(1 << 20)
