@@ -144,7 +144,7 @@ huffman_init(struct rar20_huffman *h, const uint8_t *code_lengths, size_t n)
 	uint8_t i;
 	size_t k;
 	unsigned bits;
-	uint16_t q;
+	unsigned q;
 
 	memset(count, 0, sizeof(count));
 	for (k = 0; k < n; k++) {
@@ -181,7 +181,7 @@ huffman_init(struct rar20_huffman *h, const uint8_t *code_lengths, size_t n)
 		h->quickbits = MAX_QUICK_BITS - 3;
 
 	bits = 1;
-	for (q = 0; q < (1 << h->quickbits); q++) {
+	for (q = 0; q < (1u << h->quickbits); q++) {
 		uint16_t v = (uint16_t)(q << (MAX_CODE_LENGTH - h->quickbits));
 		uint16_t dist;
 		unsigned pos;
