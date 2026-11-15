@@ -1,7 +1,20 @@
 # ClamCove
 
 ClamCove is a fork of [ClamAV](https://github.com/Cisco-Talos/clamav), the
-open source antivirus engine. It is versioned on ClamAV's version:
+open source antivirus engine. It enhances ClamAV for two reasons:
+
+- **Performance and scale.** Signatures that cannot match a file are skipped
+  sooner, and large RAR archives no longer hold their whole decompression
+  window in memory, so one server screens more files, and more at once, within
+  a fixed memory limit.
+- **RAR without the unRAR licence.** ClamAV reads RAR archives with RARLAB's
+  unRAR code, whose licence is not an open source licence and restricts how the
+  code may be used. ClamCove can be built to read RAR through
+  [libarchive](https://github.com/libarchive/libarchive) (BSD-2-Clause)
+  instead, with no unRAR code at all, so it can be shipped wherever that
+  licence is not acceptable.
+
+ClamCove is versioned on ClamAV's version:
 `<clamav major>.<minor>.<patch>.<clamcove release>`, the OpenResty convention,
 so ClamCove 1.5.4.3 is ClamAV 1.5.4 plus ClamCove release 3. Container images
 are tagged with the exact version (`ghcr.io/mkhanal/clamcove:1.5.4.3`) and with
