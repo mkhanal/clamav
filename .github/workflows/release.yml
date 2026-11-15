@@ -2,8 +2,13 @@ name: ClamCove Release
 
 on:
   push:
+    branches:
+      - release/**
     tags:
       - "clamcove-*"
+  pull_request:
+    branches:
+      - release/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -13,8 +18,36 @@ permissions:
   contents: read
 
 jobs:
+  patches:
+    name: release patches
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Patches apply to the upstream source and give the release tree
+        env:
+          REF_NAME: ${{ github.base_ref || github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ "$REF_TYPE" = tag ] && [[ "$REF_NAME" =~ ^clamcove-([0-9]+\.[0-9]+\.[0-9]+)\.[0-9]+$ ]]; then
+            release=$REF_NAME
+          elif [[ "$REF_NAME" =~ ^release/clamav-([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            release=HEAD
+          else
+            echo "$REF_NAME is neither a clamcove-<version>.<n> tag nor a release/clamav-<version> branch"; exit 1
+          fi
+          upstream="clamav-${BASH_REMATCH[1]}"
+          git rev-parse --verify --quiet "$upstream^{commit}" > /dev/null \
+            || { echo "upstream tag $upstream is not in this repository"; exit 1; }
+          .github/dist/check-patches.sh "$upstream" "$release"
+
   source-tarball:
     name: source tarball
+    needs: patches
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -88,7 +121,11 @@ jobs:
               echo "Complete corresponding source: \`$OUT.tar.gz\`, the official clamav-$VERSION.tar.gz with the changes of tag $TAG applied (SHA-256 in \`$OUT.tar.gz.sha256\`)."
               echo "Container image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV\`."
               echo
-              echo "Patches, one per change, to apply in order to the official source:"
+              if grep -q 'no RARLAB unRAR code' dist/release-notes-patches.md; then
+                echo "The libarchive RAR build contains no RARLAB unRAR code."
+                echo
+              fi
+              echo "Patches to apply in order to the official source, each the net diff of its change (changes that edit the same lines come as one patch):"
               cat dist/release-notes-patches.md
             } > dist/release-notes.md
             gh release create "$TAG" --verify-tag --title "ClamCove $REV" --notes-file dist/release-notes.md
@@ -98,6 +135,7 @@ jobs:
   image:
     name: container image
     needs: source-tarball
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
