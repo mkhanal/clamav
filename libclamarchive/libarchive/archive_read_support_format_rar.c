@@ -418,6 +418,9 @@ struct rar
   /* First archive comment, for archive_read_rar_comment_info(). */
   struct archive_rar_comment_info comment;
   void *comment_data;
+
+  /* A main or file header failed its CRC. */
+  char header_crc_failed;
 };
 
 static int archive_read_support_format_rar_capabilities(struct archive_read *);
@@ -993,7 +996,8 @@ archive_read_format_rar_read_header(struct archive_read *a,
       crc32_val = __archive_crc32(0, (const unsigned char *)p + 2,
           (rar->main_flags & MHD_COMMENT) ? 13 - 2 : (unsigned)skip - 2);
       /* A header CRC mismatch does not stop the read, as with unRAR. */
-      (void)crc32_val;
+      if ((crc32_val & 0xffff) != archive_le16dec(p))
+        rar->header_crc_failed = 1;
       __archive_read_consume(a, skip);
       break;
 
@@ -1504,6 +1508,16 @@ archive_read_rar_skip_data(struct archive *_a,
 }
 
 int
+archive_read_rar_header_damaged(struct archive *_a)
+{
+  struct archive_read *a;
+
+  if ((a = rar_info_reader(_a, "rar")) != NULL)
+    return (((struct rar *)a->format->data)->header_crc_failed);
+  return (__archive_read_rar5_header_damaged(_a));
+}
+
+int
 archive_read_rar_comment_info(struct archive *_a,
     struct archive_rar_comment_info *info)
 {
@@ -1665,11 +1679,13 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   crc32_read = archive_le16dec(rar_header.crc);
   /* A header CRC mismatch does not stop the read, as with unRAR, unless the
    * header carries a file comment, which unRAR does not read past. */
-  if ((crc32_computed & 0xffff) != crc32_read &&
-      (rar->file_flags & FHD_COMMENT)) {
-    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-      "Header CRC error");
-    return (ARCHIVE_FATAL);
+  if ((crc32_computed & 0xffff) != crc32_read) {
+    if (rar->file_flags & FHD_COMMENT) {
+      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+        "Header CRC error");
+      return (ARCHIVE_FATAL);
+    }
+    rar->header_crc_failed = 1;
   }
   p = h;
   endp = p + header_size - 7;
