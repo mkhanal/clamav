@@ -454,6 +454,8 @@ const struct clam_option __clam_options[] = {
 
     {"AlertEncryptedArchive", "alert-encrypted-archive", 0, CLOPT_TYPE_BOOL, MATCH_BOOL, 0, NULL, 0, OPT_CLAMD | OPT_CLAMSCAN, "Alert on encrypted archives (encrypted .zip, .7zip, .rar).", "no"},
 
+    {"AlertIncompleteRAR", "alert-incomplete-rar", 0, CLOPT_TYPE_BOOL, MATCH_BOOL, 0, NULL, 0, OPT_CLAMD | OPT_CLAMSCAN, "Alert on RAR archives whose contents could not all be extracted and scanned\n(a single volume of a multi-volume set, missing volumes, corrupt or truncated\ndata, an entry that fails to extract) with the Heuristics.Incomplete.RAR\nheuristic signature.", "no"},
+
     {"AlertEncryptedDoc", "alert-encrypted-doc", 0, CLOPT_TYPE_BOOL, MATCH_BOOL, 0, NULL, 0, OPT_CLAMD | OPT_CLAMSCAN, "Alert on encrypted documents (encrypted .pdf).", "no"},
 
     {"AlertOLE2Macros", "alert-macros", 0, CLOPT_TYPE_BOOL, MATCH_BOOL, 0, NULL, 0, OPT_CLAMD | OPT_CLAMSCAN, "With this option enabled OLE2 files with VBA macros, which were not\ndetected by signatures will be marked as \"Heuristics.OLE2.ContainsMacros\".", "no"},

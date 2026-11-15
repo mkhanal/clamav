@@ -220,6 +220,7 @@ struct cl_scan_options {
 #define CL_SCAN_HEURISTIC_STRUCTURED_SSN_STRIPPED   0x800  /** alert when detecting stripped social security numbers */
 #define CL_SCAN_HEURISTIC_STRUCTURED_CC             0x1000 /** alert when detecting credit card numbers */
 #define CL_SCAN_HEURISTIC_BROKEN_MEDIA              0x2000 /** alert if a file does not match the identified file format, works with JPEG, TIFF, GIF, PNG */
+#define CL_SCAN_HEURISTIC_INCOMPLETE_RAR            0x4000 /** alert if the contents of a RAR archive could not all be extracted and scanned (missing volume, corrupt or truncated data) */
 
 /* mail scanning options */
 #define CL_SCAN_MAIL_PARTIAL_MESSAGE                0x1
