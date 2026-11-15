@@ -96,6 +96,11 @@ data; their headers record the size and CRC of what unRAR decodes from it.
 | `rar15-small.rar`, `rar15-solid.rar`, `rar15-rar20-solid.rar` | RAR 1.5 compression |
 | `rar20-lz-text.rar`, `rar20-audio-1ch.rar`, `rar20-audio-4ch.rar`, `rar20-block-switches.rar`, `rar26-lz-audio.rar` | RAR 2.0 and 2.6 compression, including multimedia (audio) blocks |
 | `rar4-split-unpack-version-change.rar` | a RAR 2.9 entry whose continuation header declares unpack version 20: the parts of a split entry must agree |
+| `rar4-split-unpack-version-change.rar` | a RAR 2.9 entry whose continuation header declares unpack version 20: the parts of a split entry must agree |
+
+`rar4-solid-ppmd-damaged-range.rar` is `rar4-solid-skip-budget.rar` mutated by a
+fuzzer (its checksums are wrong): its second entry continues a PPMd block after
+damaged data left the range decoder mid-symbol.
 
 Both backends extract the RAR 2.0 and 2.6 archives as recorded in
 `rar_test.py`. No reader in this repository decodes RAR 1.5: with the libarchive

@@ -775,6 +775,10 @@ static Bool PpmdRAR_RangeDec_Init(CPpmd7z_RangeDec *p)
 static UInt32 Range_GetThreshold(void *pp, UInt32 total)
 {
   CPpmd7z_RangeDec *p = (CPpmd7z_RangeDec *)pp;
+  /* A range below the total is a decoder left in the middle of a symbol by
+   * damaged data: report a threshold no symbol reaches. */
+  if (total == 0 || p->Range < total)
+    return 0xFFFFFFFF;
   return (p->Code - p->Low) / (p->Range /= total);
 }
 

@@ -544,6 +544,33 @@ class TC(testcase.TestCase):
         assert output.ec == 0  # clean
         self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
 
+    def test_split_entry_parts_with_different_unpack_versions(self):
+        self.step_name('Test a split entry whose continuation declares another unpack version is not decoded')
+
+        # The first part is RAR 2.9 and the continuation header declares
+        # unpack version 20. The entry is not decoded with a decoder it was
+        # not set up for; the scan ends clean without a crash.
+        testfile = TC.path_rar / 'rar4-split-unpack-version-change.rar'
+        output = self.scan(testfile)
+
+        assert output.ec == 0  # clean
+        self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
+
+    def test_solid_ppmd_entry_after_damaged_data(self):
+        self.step_name('Test a solid RAR 2.9 PPMd entry continuing after damaged data does not divide by zero')
+
+        # big2.txt continues the PPMd stream with a range decoder that damaged
+        # data left mid-symbol. The scan ends, and big1.txt, which precedes
+        # it, is extracted.
+        path_db = TC.path_tmp / 'rar4-solid-ppmd-damaged-range.hsb'
+        path_db.write_text('c3d34030119c715a5742577270f5069924db8bdf7628652dd96f2108a85dbdb5:30036:RAR_ENTRY\n')
+
+        testfile = TC.path_rar / 'rar4-solid-ppmd-damaged-range.rar'
+        output = self.scan(testfile, path_db=path_db)
+
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_ENTRY.UNOFFICIAL FOUND'.format(testfile.name)])
+
     def test_skipping_in_a_solid_archive_is_bounded(self):
         self.step_name('Test the work of skipping entries of a solid archive is bounded by the scan size')
 
