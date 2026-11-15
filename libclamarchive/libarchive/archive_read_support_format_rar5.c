@@ -2532,17 +2532,17 @@ static int init_unpack(struct rar5 *rar5) {
 	rar5->cstate.filtered_buf = NULL;
 
 	if(rar5->cstate.window_size > 0) {
-		rar5->cstate.window_buf = calloc(1, rar5->cstate.window_size);
-		rar5->cstate.filtered_buf = calloc(1,
-		    rar5->cstate.window_size);
-		if(rar5->cstate.window_buf == NULL ||
-		    rar5->cstate.filtered_buf == NULL) {
-			free(rar5->cstate.window_buf);
-			free(rar5->cstate.filtered_buf);
-			rar5->cstate.window_buf = NULL;
-			rar5->cstate.filtered_buf = NULL;
+		uint8_t* window_buf = calloc(1, rar5->cstate.window_size);
+		uint8_t* filtered_buf = calloc(1, rar5->cstate.window_size);
+
+		if(window_buf == NULL || filtered_buf == NULL) {
+			free(window_buf);
+			free(filtered_buf);
 			return ARCHIVE_FAILED;
 		}
+
+		rar5->cstate.window_buf = window_buf;
+		rar5->cstate.filtered_buf = filtered_buf;
 	}
 
 	clear_data_ready_stack(rar5);
