@@ -1,8 +1,7 @@
 # libarchive, vendored for libclamunrar_iface
 
 This directory holds libarchive (BSD-2-Clause, see `COPYING`), the library
-that reads RAR archives for ClamAV when it is configured with
-`-DENABLE_UNRAR_LIBARCHIVE=ON`. It is built as a static library with no
+that reads RAR archives for ClamCove (`ENABLE_UNRAR`, on by default). It is built as a static library with no
 optional dependencies and linked into `libclamunrar_iface`, so it adds no
 runtime dependency. Nothing here is installed.
 
