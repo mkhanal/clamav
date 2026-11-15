@@ -186,7 +186,7 @@ jobs:
           out=$(docker run --rm "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV" clamscan --version)
           echo "$out"
           case "$out" in "ClamAV "*"(ClamCove $REV)") ;; *) exit 1 ;; esac
-          docker run --rm "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV" sh -c 'ls /usr/lib/libclamunrar.so* 2>/dev/null && exit 1; ls /usr/lib/libclamunrar_iface.so* >/dev/null'
+          docker run --rm "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV" sh -c 'test -z "$(find / -xdev -name "libclamunrar.so*")" && test -n "$(find / -xdev -name "libclamunrar_iface.so*")"'
 
       - name: Push
         run: |
