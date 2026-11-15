@@ -1720,6 +1720,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   int64_t header_size;
   unsigned filename_size, end;
   int continues_solid;
+  int entry_method, entry_unp_ver;
   char *filename;
   char *strp;
   char packed_size[8];
@@ -1757,6 +1758,9 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   }
   crc32_computed = __archive_crc32(0, (const unsigned char *)p + 2, 7 - 2);
   __archive_read_consume(a, 7);
+
+  entry_method = rar->compression_method;
+  entry_unp_ver = rar->unp_ver;
 
   /* A solid entry keeps the previous entry's times and mode until its own
    * header sets them; the decoder state is kept further down. */
@@ -2104,6 +2108,15 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     filename_size == rar->filename_save_size &&
     !memcmp(rar->filename, rar->filename_save, filename_size + 1))
   {
+    if (rar->compression_method != entry_method ||
+        rar->unp_ver != entry_unp_ver)
+    {
+      rar->compression_method = entry_method;
+      rar->unp_ver = entry_unp_ver;
+      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+        "Mismatch of file parts split across multi-volume archive");
+      return (ARCHIVE_FATAL);
+    }
     __archive_read_consume(a, header_size - 7);
     rar->br.avail_in = 0;
     rar->br.next_in = NULL;
@@ -2214,10 +2227,9 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   rar->bytes_uncopied = rar->bytes_unconsumed = 0;
   continues_solid = (rar->file_flags & FHD_SOLID) && rar->solid_state_valid &&
       rar->compression_method != COMPRESS_METHOD_STORE;
-  if (!continues_solid)
+  if (!continues_solid && rar->compression_method != COMPRESS_METHOD_STORE)
   {
-    if (rar->compression_method != COMPRESS_METHOD_STORE)
-      rar->solid_state_valid = 0;
+    rar->solid_state_valid = 0;
     rar->lzss.position = 0;
     rar->dictionary_size = 0;
     rar->is_ppmd_block = 0;
@@ -2234,6 +2246,8 @@ read_header(struct archive_read *a, struct archive_entry *entry,
    * programs defined so far carry over in a solid stream, but a filter
    * still waiting for its block does not.
    */
+  if (continues_solid && (ret2 = rar_prepare_window(a)) != ARCHIVE_OK)
+    return (ret2);
   rar->mixed_solid_decoders = 0;
   if (rar->compression_method != COMPRESS_METHOD_STORE &&
       continues_solid &&
@@ -3004,7 +3018,9 @@ rar_prepare_window(struct archive_read *a)
   struct rar *rar = a->format->data;
 
   if (!rar->dictionary_size || !rar->lzss.window ||
-      (unsigned int)(rar->lzss.mask + 1) < rar->dictionary_size)
+      (unsigned int)(rar->lzss.mask + 1) < rar->dictionary_size ||
+      ((rar->file_flags & FHD_SOLID) &&
+       (unsigned int)(rar->lzss.mask + 1) < DICTIONARY_MAX_SIZE))
   {
     /* Seems as though dictionary sizes are not used. Even so, minimize
      * memory usage as much as possible.
@@ -3029,8 +3045,19 @@ rar_prepare_window(struct archive_read *a)
       return (ARCHIVE_FATAL);
     }
     if (rar->lzss.window != NULL)
-      __archive_rar_window_free(rar->lzss.window,
-                                (size_t)rar->lzss.mask + 1);
+    {
+      /* An entry that continues the solid stream in a window sized for
+       * the entries before it keeps what they wrote. */
+      int64_t pos;
+      int64_t old_size = (int64_t)rar->lzss.mask + 1;
+
+      for (pos = rar->lzss.position > old_size ?
+             rar->lzss.position - old_size : 0;
+           pos < rar->lzss.position; pos++)
+        ((unsigned char *)new_window)[pos & (new_size - 1)] =
+          rar->lzss.window[pos & rar->lzss.mask];
+      __archive_rar_window_free(rar->lzss.window, (size_t)old_size);
+    }
     rar->lzss.window = (unsigned char *)new_window;
     rar->dictionary_size = new_size;
     rar->lzss.mask = rar->dictionary_size - 1;
