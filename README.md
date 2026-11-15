@@ -1,7 +1,7 @@
 # ClamCove
 
 ClamCove is a fork of [ClamAV](https://github.com/Cisco-Talos/clamav), the
-open source antivirus engine, made for two reasons:
+open source antivirus engine. It enhances ClamAV for two reasons:
 
 - **Performance and scale.** Signatures that cannot match a file are skipped
   sooner, and large RAR archives no longer hold their whole decompression
