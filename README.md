@@ -3,8 +3,8 @@
 ClamCove is a fork of [ClamAV](https://github.com/Cisco-Talos/clamav), the
 open source antivirus engine. It is versioned on ClamAV's version:
 `<clamav major>.<minor>.<patch>.<clamcove release>`, the OpenResty convention,
-so ClamCove 1.5.4.1 is ClamAV 1.5.4 plus ClamCove release 1. Container images
-are tagged with the exact version (`ghcr.io/mkhanal/clamcove:1.5.4.1`) and with
+so ClamCove 1.5.4.2 is ClamAV 1.5.4 plus ClamCove release 2. Container images
+are tagged with the exact version (`ghcr.io/mkhanal/clamcove:1.5.4.2`) and with
 the floating tags `1.5.4`, `1.5`, `1` and `latest`, each moved to the newest
 ClamCove release on that line.
 
@@ -35,6 +35,14 @@ Changes that edit the same lines cannot be split and come as one patch whose tit
 test inputs, fuzz targets, RAR parity tooling and README of all the changes. The libarchive RAR build contains no RARLAB unRAR
 code. `.github/dist/split-changes.sh` writes the patches and `.github/dist/check-patches.sh` verifies them on every pull request
 and push to a release branch; the ownership of commits by change is `.github/clamcove-changes.txt`.
+
+## Cutting a release
+
+The source carries its own release number: `CLAMCOVE_RELEASE` in `CMakeLists.txt`, which with the project version gives the
+version in `clamscan --version`. To cut `clamcove-<version>.<n>`, first set `CLAMCOVE_RELEASE` to `<n>` and update the version
+in `README.md` and `NOTICE`, merge that to the release branch, then tag the merge commit. `.github/dist/check-version.sh` fails
+a pull request or push when those three disagree, and fails the release workflow, before anything is built, when the tag names
+another version than the tagged source.
 
 ClamCove is based on ClamAV by Cisco Systems, Inc. ClamAV is a trademark of
 Cisco. ClamCove is not affiliated with or endorsed by Cisco or the ClamAV
