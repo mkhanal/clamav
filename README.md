@@ -3,8 +3,8 @@
 ClamCove is a fork of [ClamAV](https://github.com/Cisco-Talos/clamav), the
 open source antivirus engine. It is versioned on ClamAV's version:
 `<clamav major>.<minor>.<patch>.<clamcove release>`, the OpenResty convention,
-so ClamCove 1.5.4.2 is ClamAV 1.5.4 plus ClamCove release 2. Container images
-are tagged with the exact version (`ghcr.io/mkhanal/clamcove:1.5.4.2`) and with
+so ClamCove 1.5.4.3 is ClamAV 1.5.4 plus ClamCove release 3. Container images
+are tagged with the exact version (`ghcr.io/mkhanal/clamcove:1.5.4.3`) and with
 the floating tags `1.5.4`, `1.5`, `1` and `latest`, each moved to the newest
 ClamCove release on that line.
 
