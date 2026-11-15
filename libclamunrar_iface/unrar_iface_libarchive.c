@@ -1091,6 +1091,7 @@ cl_unrar_error_t unrar_peek_file_header(void *hArchive, unrar_metadata_t *file_m
     }
     file_metadata->encrypted = info.is_encrypted ? 1 : 0;
     file_metadata->is_dir    = info.is_dir ? 1 : 0;
+    file_metadata->is_link   = (info.redir_type != ARCHIVE_RAR_REDIR_NONE) ? 1 : 0;
     file_metadata->method    = (uint8_t)(info.format == ARCHIVE_RAR_INFO_FORMAT_RAR5 ? info.method + RAR4_METHOD_STORE : info.method);
     convert_name(&info, file_metadata->filename, UNRAR_NAME_BUFFER_SIZE);
 
@@ -1211,12 +1212,13 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
         }
         if (r < ARCHIVE_WARN) {
             unrar_dbgmsg("unrar_extract_file: %s\n", archive_error_string(h->archive));
-            if (archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_UNSUPPORTED ||
-                archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_CHECKSUM) {
+            if (archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_UNSUPPORTED) {
                 status         = UNRAR_ERR;
                 entry_rejected = 1;
             } else if (info.split_after) {
                 status = UNRAR_EOPEN;
+            } else {
+                status = UNRAR_EDATA;
             }
             break;
         }
@@ -1242,7 +1244,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     }
     close(fd);
 
-    if (status == UNRAR_OK) {
+    if (status == UNRAR_OK || status == UNRAR_EDATA) {
         h->state = HEADER_NONE;
         unrar_dbgmsg("unrar_extract_file: Extracted file to: %s\n", destPath);
     } else if (entry_rejected) {
@@ -1258,6 +1260,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
 cl_unrar_error_t unrar_skip_file(void *hArchive)
 {
     unrar_handle_t *h = (unrar_handle_t *)hArchive;
+    cl_unrar_error_t status;
 
     if (NULL == h) {
         unrar_dbgmsg("unrar_skip_file: Invalid arguments.\n");
@@ -1274,8 +1277,9 @@ cl_unrar_error_t unrar_skip_file(void *hArchive)
         }
         return h->status;
     }
-    if (skip_current(h) != UNRAR_OK) {
-        return UNRAR_ERR;
+    status = skip_current(h);
+    if (status != UNRAR_OK) {
+        return status;
     }
     unrar_dbgmsg("unrar_skip_file: File skipped.\n");
     return UNRAR_OK;
