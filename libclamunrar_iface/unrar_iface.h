@@ -43,6 +43,7 @@
 #define unrar_peek_file_header libclamunrar_iface_LTX_unrar_peek_file_header
 #define unrar_extract_file libclamunrar_iface_LTX_unrar_extract_file
 #define unrar_skip_file libclamunrar_iface_LTX_unrar_skip_file
+#define unrar_set_skip_limits libclamunrar_iface_LTX_unrar_set_skip_limits
 #define unrar_close libclamunrar_iface_LTX_unrar_close
 
 typedef enum cl_unrar_error_tag {
@@ -51,7 +52,9 @@ typedef enum cl_unrar_error_tag {
     UNRAR_ENCRYPTED,
     UNRAR_EMEM,
     UNRAR_ERR,
-    UNRAR_EOPEN
+    UNRAR_EOPEN,
+    UNRAR_EDATA,
+    UNRAR_ELIMIT
 } cl_unrar_error_t;
 
 typedef struct unrar_metadata_tag {
@@ -62,12 +65,30 @@ typedef struct unrar_metadata_tag {
     unsigned int encrypted;
     uint8_t method;
     uint32_t is_dir;
+    uint32_t is_link;
 } unrar_metadata_t;
 
 cl_unrar_error_t unrar_open(const char *filename, void **hArchive, char **comment, uint32_t *comment_size, uint8_t debug_flag);
 cl_unrar_error_t unrar_peek_file_header(void *hArchive, unrar_metadata_t *file_metadata);
 cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *outputBuffer);
 cl_unrar_error_t unrar_skip_file(void *hArchive);
+
+/**
+ * @brief  Bound the work skipping entries may cost.
+ *
+ * In a solid archive an entry that is skipped still has to be decoded,
+ * because the entries after it continue its stream. This sets how much of
+ * that decoding the archive may do in total, and by when. When either is
+ * used up, unrar_skip_file() returns UNRAR_ELIMIT and the archive cannot be
+ * read further. A backend whose skips cost nothing accepts and ignores it.
+ *
+ * @param hArchive      The archive handle.
+ * @param max_bytes     Bytes that may be decoded and discarded; 0 for no limit.
+ * @param deadline_usec Wall clock time in microseconds since the Unix epoch
+ *                      by which skipping must be over; 0 for no deadline.
+ * @return UNRAR_OK or UNRAR_ERR.
+ */
+cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint64_t deadline_usec);
 void unrar_close(void *hArchive);
 
 #endif

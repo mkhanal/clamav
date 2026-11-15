@@ -438,6 +438,11 @@ if(ENABLE_SHARED_LIB)
             LibXml2::LibXml2
             JSONC::jsonc )
 
+    if(ENABLE_UNRAR AND ENABLE_UNRAR_LIBARCHIVE)
+        # Linked, not loaded at run time: see UNRAR_LINKED.
+        target_link_libraries( clamav PRIVATE ClamAV::libunrar_iface )
+    endif()
+
     if(WIN32)
         target_link_libraries( clamav
             PUBLIC
