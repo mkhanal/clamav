@@ -134,6 +134,12 @@ RAR_250 = {
         ('QUAD.RAW', 20000, 'f4c3c4e77735bad89fd780401e5c7028a7762aaf52ca20c8914ebe40ba49ca08'),
         ('TEXT.TXT', 30000, 'ad04f3359e61af141c54b2ac82a53e01c43c525f653d317e0352ce87d9f72f32'),
     ],
+    'rar250-solid-small.rar': [
+        ('S01.TXT', 1028, '711b45042255cd1101053800d87991c20e78cc00040a6f4b623162a1c43be097'),
+        ('S02.TXT', 2076, 'f18aeddb63f95eb3cba920265dde81fd8cdacf984d40e81e3bed9322103666ff'),
+        ('S03.TXT', 596, '28638542b2aa0649c3d2e23bb34171b6590cd77cfd23a2c965f277300093fb01'),
+        ('S04.TXT', 1639, 'c45822f85fce60efc6cfa973c31a32ed0b3903d58b8688c95d14be6a1b24a8e0'),
+    ],
     'rar250-solid-volumes.rar': [
         ('RAND.BIN', 12000, '0bb8ce60776d61f4e23c42ef81b8ea60a08fe60d06d582aebd93b0bb7d7cf90a'),
         ('TEXT.TXT', 30000, 'ad04f3359e61af141c54b2ac82a53e01c43c525f653d317e0352ce87d9f72f32'),
