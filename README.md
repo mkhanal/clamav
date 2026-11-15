@@ -25,6 +25,17 @@ change it makes accepted into ClamAV, so that it shrinks back to ClamAV.
 
 The RAR rows apply to the libarchive build (`ENABLE_UNRAR_LIBARCHIVE`); the unRAR build behaves as ClamAV does.
 
+## Release patches
+
+Every release ships its changes to the official ClamAV source as patches, next to the complete source tarball. Each patch is
+the net diff of one change: it contains what the release contains and nothing a later commit removed, so no patch carries code
+that is not in the release. Apply them in file name order to the official `clamav-<version>` source with
+`git apply --binary -p1 <patch>`; the result is exactly the release tree without `.github` (CI and release inputs).
+Changes that edit the same lines cannot be split and come as one patch whose title names them; the last patch holds the tests,
+test inputs, fuzz targets, RAR parity tooling and README of all the changes. The libarchive RAR build contains no RARLAB unRAR
+code. `.github/dist/split-changes.sh` writes the patches and `.github/dist/check-patches.sh` verifies them on every pull request
+and push to a release branch; the ownership of commits by change is `.github/clamcove-changes.txt`.
+
 ClamCove is based on ClamAV by Cisco Systems, Inc. ClamAV is a trademark of
 Cisco. ClamCove is not affiliated with or endorsed by Cisco or the ClamAV
 project. ClamCove is licensed under the GNU General Public License, version 2
