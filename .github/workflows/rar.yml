@@ -124,20 +124,15 @@ jobs:
         run: python3 tools/rar-parity/compare.py --a prefix:/opt/clamav-rarlab --b prefix:/opt/clamav-libarchive --json parity.json
 
       - name: Compare with the incomplete-RAR alert
-        if: steps.inputs.outputs.present == 'true'
+        if: ${{ !cancelled() && steps.inputs.outputs.present == 'true' }}
         run: |
           if ! /opt/clamav-libarchive/bin/clamscan --help | grep -q -- --alert-incomplete-rar; then
             echo "skipped: --alert-incomplete-rar not present on this commit"
             echo "### skipped: --alert-incomplete-rar not present" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          for name in rarlab libarchive; do
-            mkdir -p "/tmp/alert-$name/bin"
-            ln -s "/opt/clamav-$name/lib" "/tmp/alert-$name/lib"
-            printf '#!/bin/sh\nexec /opt/clamav-%s/bin/clamscan --alert-incomplete-rar=yes "$@"\n' "$name" > "/tmp/alert-$name/bin/clamscan"
-            chmod +x "/tmp/alert-$name/bin/clamscan"
-          done
-          python3 tools/rar-parity/compare.py --a prefix:/tmp/alert-rarlab --b prefix:/tmp/alert-libarchive --json parity-alert.json
+          python3 tools/rar-parity/compare.py --a prefix:/opt/clamav-rarlab --b prefix:/opt/clamav-libarchive \
+            --extra-options=--alert-incomplete-rar=yes --json parity-alert.json
 
       - name: Upload parity results
         if: always() && steps.inputs.outputs.present == 'true'
