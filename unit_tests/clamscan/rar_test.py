@@ -302,6 +302,23 @@ class TC(testcase.TestCase):
             with self.subTest(byte=name):
                 self.scan_damaged_copy('rar5-compressed-checked.rar', offset, size, sha256, 'rar5-compressed-checked.rar-' + name)
 
+    def test_archive_whose_header_failed_its_check_ends_in_an_error(self):
+        self.step_name('Test the entry of an archive whose header checksum is wrong is scanned and the archive ends in an error')
+
+        # unRAR extracts the entry, then reports an error at the end of the
+        # archive; so does this backend.
+        for archive, offset in (('rar4-compressed-checked.rar', 20), ('rar5-compressed-checked.rar', 24)):
+            with self.subTest(archive=archive):
+                damaged = TC.path_tmp / ('damaged-header-' + archive)
+                data = bytearray((TC.path_rar / archive).read_bytes())
+                data[offset] ^= 0xFF
+                damaged.write_bytes(data)
+
+                output = self.scan(damaged, '--debug')
+                assert output.ec == 0  # clean
+                assert 'RAR: Extraction complete' in output.out + output.err
+                assert re.search(r'RAR: Error \(\d+\) reading file header', output.out + output.err)
+
     def test_archive_without_a_valid_header_is_not_a_clean_end(self):
         self.step_name('Test an archive with a signature but no valid header is an error, an empty archive is not')
 

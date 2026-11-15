@@ -957,7 +957,7 @@ static void read_comment(struct archive *a, char **comment, uint32_t *comment_si
 static cl_unrar_error_t header_error(unrar_handle_t *h, int r)
 {
     if (r == ARCHIVE_EOF) {
-        return UNRAR_BREAK;
+        return archive_read_rar_header_damaged(h->archive) ? UNRAR_ERR : UNRAR_BREAK;
     }
     if (archive_read_has_encrypted_entries(h->archive) > 0 && h->entry != NULL &&
         archive_entry_is_metadata_encrypted(h->entry)) {
