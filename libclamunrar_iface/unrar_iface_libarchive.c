@@ -1177,9 +1177,10 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     size_t size;
     la_int64_t offset;
     uint64_t remaining;
-    uint64_t output_limit = UINT64_MAX;
-    int excess            = 0;
-    uint64_t written      = 0;
+    uint64_t output_limit  = UINT64_MAX;
+    uint64_t discarded     = 0;
+    uint64_t discard_limit = UINT64_MAX;
+    uint64_t written       = 0;
     int r;
 
     if (NULL == h || NULL == destPath) {
@@ -1225,6 +1226,11 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
         output_limit = h->skip_bytes_left;
     }
 
+    /* Data past the declared size is decoded and dropped, so that the checksum at the end of the entry is still checked, within what is left of the scan size. */
+    if (h->skip_bytes_limited) {
+        discard_limit = h->skip_bytes_left;
+    }
+
     for (;;) {
         r = archive_read_data_block(h->archive, &buf, &size, &offset);
         if (r == ARCHIVE_EOF) {
@@ -1247,8 +1253,8 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
             break;
         }
         if ((uint64_t)size > remaining) {
-            size   = (size_t)remaining;
-            excess = 1;
+            discarded += size - remaining;
+            size = (size_t)remaining;
         }
         remaining -= size;
         written += size;
@@ -1267,21 +1273,13 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
                 break;
             }
         }
-        if (written > output_limit || skip_deadline_passed(h)) {
+        if (written > output_limit || discarded > discard_limit || skip_deadline_passed(h)) {
             unrar_dbgmsg("unrar_extract_file: Output of an entry reached the scan limits.\n");
             status = UNRAR_ELIMIT;
             break;
         }
-        if (excess) {
-            break;
-        }
     }
     close(fd);
-
-    if (excess && status == UNRAR_OK) {
-        /* The data goes on past the declared size; unRAR writes none of it, and decoding it costs what is left of the limits. */
-        status = skip_current(h);
-    }
 
     if (status == UNRAR_OK || status == UNRAR_EDATA) {
         h->state = HEADER_NONE;
