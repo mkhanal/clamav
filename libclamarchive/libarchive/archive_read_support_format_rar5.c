@@ -1460,6 +1460,8 @@ static int parse_file_extra_htime(struct archive_read* a,
 static int parse_file_extra_redir(struct archive_read* a,
     struct archive_entry* e, struct rar5 *rar5, int64_t* extra_data_size)
 {
+	uint64_t redir_type = 0;
+	uint64_t redir_flags = 0;
 	uint64_t value_size = 0;
 	size_t varint_len = 0;
 	size_t target_size = 0;
@@ -1467,14 +1469,14 @@ static int parse_file_extra_redir(struct archive_read* a,
 	const uint8_t* p;
 	int r;
 
-	r = read_var(a, &rar5->file.redir_type, &value_size);
+	r = read_var(a, &redir_type, &value_size);
 	if(r != ARCHIVE_OK)
 		return r;
 	if(ARCHIVE_OK != consume(a, (int64_t)value_size))
 		return ARCHIVE_EOF;
 	*extra_data_size -= value_size;
 
-	r = read_var(a, &rar5->file.redir_flags, &value_size);
+	r = read_var(a, &redir_flags, &value_size);
 	if(r != ARCHIVE_OK)
 		return r;
 	if(ARCHIVE_OK != consume(a, (int64_t)value_size))
@@ -1486,6 +1488,7 @@ static int parse_file_extra_redir(struct archive_read* a,
 		return r;
 	if(ARCHIVE_OK != consume(a, (int64_t)varint_len))
 		return ARCHIVE_EOF;
+	*extra_data_size -= (int64_t)varint_len;
 
 	if(target_size > (MAX_NAME_IN_CHARS - 1)) {
 		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
@@ -1499,13 +1502,13 @@ static int parse_file_extra_redir(struct archive_read* a,
 		return ARCHIVE_FATAL;
 	}
 
-	if((int64_t)(target_size + varint_len) > *extra_data_size) {
+	if((int64_t)target_size > *extra_data_size) {
 		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
 		    "Extra data size is too small for link target");
 		return ARCHIVE_FATAL;
 	}
 
-	*extra_data_size -= (int64_t)(target_size + varint_len);
+	*extra_data_size -= (int64_t)target_size;
 
 	if(!read_ahead(a, target_size, &p))
 		return ARCHIVE_EOF;
@@ -1515,6 +1518,9 @@ static int parse_file_extra_redir(struct archive_read* a,
 
 	if(ARCHIVE_OK != consume(a, (int64_t)target_size))
 		return ARCHIVE_EOF;
+
+	rar5->file.redir_type = redir_type;
+	rar5->file.redir_flags = redir_flags;
 
 	switch(rar5->file.redir_type) {
 		case REDIR_TYPE_UNIXSYMLINK:

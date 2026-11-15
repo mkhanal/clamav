@@ -15,9 +15,14 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+import rar5_craft
 import testcase
 
 MARKER = b'ClamAV-RAR-backend-test-marker-6f1c2e'
+
+# What the entry of each RAR5 fixture extracts to: (size, SHA-256).
+COMPRESSED_ENTRY = (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')
+STORED_ENTRY = (4000, 'c98ce101b24950ffda930e9bb352eb2caf478ba84b56648fe80528ba71f7eab0')
 
 # Archive -> what every entry must extract to: (size, SHA-256).
 EXTRACTED = {
@@ -697,3 +702,40 @@ class TC(testcase.TestCase):
 
         output = self.scan(testfile, '--alert-incomplete-rar=yes --alert-encrypted-archive=yes')
         self.verify_output(output.out, expected=['{}: Heuristics.Encrypted.RAR FOUND'.format(testfile.name)])
+
+    def write_rar5(self, name, archive):
+        path = TC.path_tmp / name
+        path.write_bytes(archive.build())
+        return path
+
+    def assert_entry_found(self, testfile, entry, options=''):
+        size, sha256 = entry
+        path_db = TC.path_tmp / (sha256 + '.hsb')
+        path_db.write_text('{}:{}:RAR_ENTRY\n'.format(sha256, size))
+
+        output = self.scan(testfile, options, path_db=path_db)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_ENTRY.UNOFFICIAL FOUND'.format(testfile.name)])
+
+    def test_malformed_redirect_record_does_not_make_the_entry_a_link(self):
+        self.step_name('Test an entry whose redirect record is malformed is extracted and scanned, not skipped as a link')
+
+        # unRAR takes any redirect record with a type for a link and does not
+        # unpack the entry. This backend only does when the record is whole,
+        # so what a malformed one is attached to is scanned.
+        if TC.backend != 'libarchive':
+            self.skipTest('The RARLAB backend skips the entry')
+
+        symlink = rar5_craft.vint(1)
+        for name, record in (
+            ('empty-target', symlink + rar5_craft.vint(0) + rar5_craft.vint(0)),
+            ('target-beyond-record', symlink + rar5_craft.vint(0) + rar5_craft.vint(40) + b'abc'),
+            ('target-too-long', symlink + rar5_craft.vint(0) + rar5_craft.vint(5000) + b'a' * 5000),
+        ):
+            with self.subTest(record=name):
+                archive = rar5_craft.Archive((TC.path_rar / 'rar5-compressed-checked.rar').read_bytes())
+                header = archive.files()[0].header()
+                header.set_records(header.records() + [(rar5_craft.EXTRA_REDIR, record)])
+                archive.files()[0].body = header.build()
+
+                self.assert_entry_found(self.write_rar5('redirect-' + name + '.rar', archive), COMPRESSED_ENTRY)
