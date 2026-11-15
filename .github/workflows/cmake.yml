@@ -35,30 +35,43 @@ jobs:
           - { name: "macos-arm64 libarchive", os: macos-latest,     cmake_args: "-DENABLE_UNRAR_LIBARCHIVE=ON" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check for the libarchive backend
+        id: backend
+        run: |
+          if [ -z "${{ matrix.cmake_args }}" ] || grep -q ENABLE_UNRAR_LIBARCHIVE CMakeLists.txt; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "skipped: ENABLE_UNRAR_LIBARCHIVE is not in this release"
+            echo "### skipped: libarchive RAR backend not in this release" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
+        if: steps.backend.outputs.present == 'true' && (runner.os == 'Linux')
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends bison flex check libbz2-dev libcurl4-openssl-dev \
             libjson-c-dev libmilter-dev libncurses-dev libpcre2-dev libssl-dev libxml2-dev pkg-config python3-pytest zlib1g-dev
 
       - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
+        if: steps.backend.outputs.present == 'true' && (runner.os == 'macOS')
         run: |
           brew install bison flex pkgconf bzip2 check curl json-c libxml2 ncurses openssl@3 pcre2 zlib pytest
           echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
 
       - name: Configure
+        if: steps.backend.outputs.present == 'true'
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
           -DENABLE_STATIC_LIB=ON -DENABLE_EXAMPLES=ON
           ${{ matrix.cmake_args }}
 
       - name: Build
+        if: steps.backend.outputs.present == 'true'
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
 
       - name: Test
+        if: steps.backend.outputs.present == 'true'
         working-directory: build
         run: ctest -C ${{ env.BUILD_TYPE }} --output-on-failure --parallel 4 ${{ runner.os == 'macOS' && '--exclude-regex "^freshclam$"' || '' }}
 
@@ -79,8 +92,20 @@ jobs:
         run: Set-MpPreference -DisableRealtimeMonitoring $true
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check for the libarchive backend
+        id: backend
+        shell: bash
+        run: |
+          if [ -z "${{ matrix.cmake_args }}" ] || grep -q ENABLE_UNRAR_LIBARCHIVE CMakeLists.txt; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "skipped: ENABLE_UNRAR_LIBARCHIVE is not in this release"
+            echo "### skipped: libarchive RAR backend not in this release" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Restore vcpkg binary cache
+        if: steps.backend.outputs.present == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: vcpkg-cache
@@ -88,6 +113,7 @@ jobs:
           restore-keys: vcpkg-windows-x64-
 
       - name: Install dependencies
+        if: steps.backend.outputs.present == 'true'
         shell: bash
         run: |
           mkdir -p vcpkg-cache
@@ -96,22 +122,25 @@ jobs:
           python -m pip install pytest
 
       - name: Save vcpkg binary cache
-        if: always() && hashFiles('vcpkg-cache/**') != ''
+        if: steps.backend.outputs.present == 'true' && (always() && hashFiles('vcpkg-cache/**') != '')
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: vcpkg-cache
           key: vcpkg-windows-x64-${{ hashFiles('.github/workflows/cmake.yml') }}-${{ matrix.name }}-${{ github.run_id }}
 
       - name: Remove Git's link.exe, which shadows MSVC's
+        if: steps.backend.outputs.present == 'true'
         shell: bash
         run: rm -f /usr/bin/link.exe
 
       - name: Set up the MSVC environment
+        if: steps.backend.outputs.present == 'true'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           arch: x64
 
       - name: Configure
+        if: steps.backend.outputs.present == 'true'
         shell: bash
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
@@ -122,10 +151,12 @@ jobs:
           ${{ matrix.cmake_args }}
 
       - name: Build
+        if: steps.backend.outputs.present == 'true'
         shell: bash
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
 
       - name: Test
+        if: steps.backend.outputs.present == 'true'
         shell: bash
         working-directory: build
         run: ctest -C ${{ env.BUILD_TYPE }} --output-on-failure --parallel 4 --exclude-regex "^clamd$"
