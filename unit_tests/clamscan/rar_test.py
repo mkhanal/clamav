@@ -189,6 +189,31 @@ class TC(testcase.TestCase):
                 assert 'RAR: Error extracting file' in output.out + output.err
                 assert 'RAR: Extraction complete' not in output.out + output.err
 
+    def scan_damaged_copy(self, archive, offset, size, sha256, name):
+        damaged = TC.path_tmp / name
+        data = bytearray((TC.path_rar / archive).read_bytes())
+        data[offset] ^= 0xFF
+        damaged.write_bytes(data)
+
+        path_db = TC.path_tmp / (name + '.hsb')
+        path_db.write_text('{}:{}:RAR_ENTRY\n'.format(sha256, size))
+
+        output = self.scan(damaged, path_db=path_db)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: RAR_ENTRY.UNOFFICIAL FOUND'.format(damaged)])
+
+    def test_rar5_entry_is_extracted_when_a_header_fails_its_check(self):
+        self.step_name('Test the entry of a RAR5 archive is extracted when a header checksum or extra record is damaged')
+
+        # rar5-compressed-checked.rar has one entry. Bytes 8 and 24 start the CRC32 of the main and the file header; byte 19 is in the main header's extra record. unRAR reads on past all three.
+        for offset, name, (size, sha256) in (
+            (8, 'main-crc', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (24, 'file-crc', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+            (19, 'main-extra', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+        ):
+            with self.subTest(byte=name):
+                self.scan_damaged_copy('rar5-compressed-checked.rar', offset, size, sha256, 'rar5-compressed-checked.rar-' + name)
+
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
 
