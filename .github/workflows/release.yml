@@ -97,17 +97,22 @@ jobs:
 
       - name: Apply the release branch changes
         run: |
-          git diff --binary --no-renames "clamav-$VERSION^{commit}" "$TAG^{commit}" > "$RUNNER_TEMP/changes.patch"
+          git diff --binary --no-renames --irreversible-delete "clamav-$VERSION^{commit}" "$TAG^{commit}" > "$RUNNER_TEMP/changes.patch"
           mkdir "$RUNNER_TEMP/src"
           tar -xzf "$RUNNER_TEMP/official/clamav-$VERSION.tar.gz" -C "$RUNNER_TEMP/src"
           mv "$RUNNER_TEMP/src/clamav-$VERSION" "$RUNNER_TEMP/src/$OUT"
           cd "$RUNNER_TEMP/src/$OUT"
-          git apply --binary -p1 "$RUNNER_TEMP/changes.patch"
+          "$GITHUB_WORKSPACE/.github/dist/apply-patch.sh" "$RUNNER_TEMP/changes.patch"
 
       - name: Split the changes into patches
         run: |
           mkdir -p dist
           .github/dist/split-changes.sh "clamav-$VERSION" "$TAG" "$OUT" dist
+
+      - name: No RARLAB file in the source or in any patch
+        run: |
+          .github/dist/check-no-rarlab.sh tree "$RUNNER_TEMP/src/$OUT"
+          .github/dist/check-no-rarlab.sh patches dist/*.patch
 
       - name: Pack reproducibly
         run: |
@@ -116,6 +121,10 @@ jobs:
           tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$mtime" \
             -C "$RUNNER_TEMP/src" -cf - "$OUT" | gzip -n -9 > "dist/$OUT.tar.gz"
           (cd dist && sha256sum "$OUT.tar.gz" | tee "$OUT.tar.gz.sha256")
+          mkdir "$RUNNER_TEMP/unpacked"
+          tar -xzf "dist/$OUT.tar.gz" -C "$RUNNER_TEMP/unpacked"
+          .github/dist/check-no-rarlab.sh tree "$RUNNER_TEMP/unpacked"
+          cp .github/dist/apply-patch.sh dist/apply-patch.sh
 
       - name: Attach to the release
         run: |
@@ -126,16 +135,14 @@ jobs:
               echo "Complete corresponding source: \`$OUT.tar.gz\`, the official clamav-$VERSION.tar.gz with the changes of tag $TAG applied (SHA-256 in \`$OUT.tar.gz.sha256\`)."
               echo "Container image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV\`."
               echo
-              if grep -q 'no RARLAB unRAR code' dist/release-notes-patches.md; then
-                echo "The libarchive RAR build contains no RARLAB unRAR code."
-                echo
-              fi
-              echo "Patches to apply in order to the official source, each the net diff of its change (changes that edit the same lines come as one patch):"
+              echo "ClamCove contains no RARLAB unRAR code: no file of it is in the source, in any patch or in the image."
+              echo
+              echo "Patches to apply in order to the official source with \`apply-patch.sh\` (a patch records a deleted file without its text, so \`git apply\` alone refuses it), each the net diff of its change (changes that edit the same lines come as one patch):"
               cat dist/release-notes-patches.md
             } > dist/release-notes.md
             gh release create "$TAG" --verify-tag --title "ClamCove $REV" --notes-file dist/release-notes.md
           fi
-          gh release upload "$TAG" "dist/$OUT.tar.gz" "dist/$OUT.tar.gz.sha256" dist/*.patch
+          gh release upload "$TAG" "dist/$OUT.tar.gz" "dist/$OUT.tar.gz.sha256" dist/apply-patch.sh dist/*.patch
 
   image:
     name: container image
@@ -167,6 +174,9 @@ jobs:
       - name: Build
         run: |
           docker build -f - -t "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV" "$RUNNER_TEMP/ctx" < .github/dist/Dockerfile
+
+      - name: No RARLAB file in any layer of the image
+        run: .github/dist/check-no-rarlab.sh image "ghcr.io/${GITHUB_REPOSITORY_OWNER}/clamcove:$REV"
 
       - name: Smoke test
         run: |

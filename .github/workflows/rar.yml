@@ -158,3 +158,6 @@ jobs:
         run: |
           docker run --rm clamcove:ci clamscan --version
           docker run --rm clamcove:ci sh -c 'test -z "$(find / -xdev -name "libclamunrar.so*")" && test -n "$(find / -xdev -name "libclamunrar_iface.so*")"'
+
+      - name: No RARLAB file in any layer of the image
+        run: .github/dist/check-no-rarlab.sh image clamcove:ci
