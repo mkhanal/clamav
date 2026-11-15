@@ -228,6 +228,31 @@ class TC(testcase.TestCase):
             with self.subTest(byte=name):
                 self.scan_damaged_copy('rar4-compressed-checked.rar', offset, size, sha256, 'rar4-compressed-checked.rar-' + name)
 
+    def test_rar4_entry_ends_at_its_end_marker(self):
+        self.step_name('Test a RAR 2.9 entry that declares more than it holds is extracted up to its end marker')
+
+        # Byte 33 is part of the file header's unpacked size: flipped, the header declares 16 MB more than the entry holds. The data ends at its marker, as unRAR reads it, and its CRC32 still matches.
+        for offset, name, (size, sha256) in (
+            (33, 'size', (15136, '9b1cfc324fbe01ca57464a1429548edace6ce6d4efaf722702aefa132975d3e2')),
+        ):
+            with self.subTest(byte=name):
+                self.scan_damaged_copy('rar4-compressed-checked.rar', offset, size, sha256, 'rar4-compressed-checked.rar-' + name)
+
+    def test_rar4_header_declaring_an_impossible_size_reaches_the_limit(self):
+        self.step_name('Test a RAR 2.9 file header that declares an impossible size is stopped by the size limit')
+
+        # Byte 24 holds the high flags of the file header: flipped, they
+        # declare a 64-bit size, a salt and extended flags that are not there,
+        # so the unpacked size is read from the wrong bytes.
+        damaged = TC.path_tmp / 'rar4-damaged-flags.rar'
+        data = bytearray((TC.path_rar / 'rar4-compressed-checked.rar').read_bytes())
+        data[24] ^= 0xFF
+        damaged.write_bytes(data)
+
+        output = self.scan(damaged, '--alert-exceeds-max=yes')
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=['{}: Heuristics.Limits.Exceeded.MaxScanSize FOUND'.format(damaged)])
+
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
 
