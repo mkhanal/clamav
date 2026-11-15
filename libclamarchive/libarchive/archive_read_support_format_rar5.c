@@ -403,6 +403,9 @@ struct rar5 {
 	/* First archive comment, for archive_read_rar_comment_info(). */
 	struct archive_rar_comment_info comment;
 	void *comment_data;
+
+	/* A main or file header failed its CRC32. */
+	uint8_t header_crc_failed;
 };
 
 /* Forward function declarations. */
@@ -2475,8 +2478,8 @@ static int process_base_block(struct archive_read* a,
 	/* Verify the CRC32 of the header data. */
 	computed_crc = (uint32_t) __archive_crc32(0, p, (int) hdr_size);
 	/* A header CRC mismatch does not stop the read, as with unRAR. */
-	(void) computed_crc;
-	(void) hdr_crc;
+	if(computed_crc != hdr_crc)
+		rar5->header_crc_failed = 1;
 
 	/* Remember the first byte of the block body so we can later skip
 	 * any bytes the sub-parser leaves unconsumed. */
@@ -4759,6 +4762,16 @@ __archive_read_rar5_entry_info(struct archive *_a,
 		return ARCHIVE_FATAL;
 	*info = rar5->info;
 	return ARCHIVE_OK;
+}
+
+int
+__archive_read_rar5_header_damaged(struct archive *_a)
+{
+	struct rar5 *rar5 = rar5_info_state(_a);
+
+	if(rar5 == NULL)
+		return 0;
+	return rar5->header_crc_failed;
 }
 
 int
