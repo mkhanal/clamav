@@ -140,6 +140,10 @@ endif()
 find_package(Rust REQUIRED)
 
 if(ENABLE_FUZZ)
+    # Checksum failures are ignored so mutated inputs reach the decoders.
+    # Never defined outside this block: see unit_tests/CMakeLists.txt.
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1")
     # We'd like the fuzz targets to be statically linked
     set(ENABLE_STATIC_LIB       ON)
     set(ENABLE_SHARED_LIB       OFF)
