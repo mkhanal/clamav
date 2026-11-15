@@ -3,9 +3,8 @@
 """
 Run clamscan RAR tests.
 
-The same expectations hold for both RAR backends (RARLAB unRAR and
-libarchive), except where noted: every expected hash below is what unRAR
-extracts.
+Every expected hash below is the SHA-256 of the entry as the archiver that
+wrote it stored it.
 """
 
 import hashlib
@@ -65,9 +64,9 @@ EXTRACTED = {
         (9044, '42ad3a48597bf100702812ad1c18b57dba1fab10f35401b6d6070b335b26057f')],
 }
 
-# RAR 1.5 compression, as RARLAB unRAR extracts it. The libarchive backend has
-# no decoder for it.
-EXTRACTED_BY_UNRAR_ONLY = {
+# RAR 1.5 compression: size and SHA-256 of what the entries hold. There is no
+# decoder for it.
+RAR_15 = {
     'rar15-small.rar': [
         (302, '6905378fc71be9665755071e77d712963f14a9e3ccab8a62fb30d42023ba8947')],
     'rar15-solid.rar': [
@@ -80,7 +79,7 @@ EXTRACTED_BY_UNRAR_ONLY = {
 }
 
 # RARLAB RAR 2.50 for DOS archives: size and SHA-256 of every entry of 3 bytes or more,
-# as the RARLAB backend extracts it. Provenance and command lines: README.md.
+# as written by RAR. Provenance and command lines: README.md.
 RAR_250 = {
     'rar250-m3.rar': [
         ('TEXT.TXT', 30000, 'ad04f3359e61af141c54b2ac82a53e01c43c525f653d317e0352ce87d9f72f32'),
@@ -229,35 +228,20 @@ class TC(testcase.TestCase):
                 self.verify_output(output.out, expected=[
                     'RAR_ENTRY_{}.UNOFFICIAL FOUND'.format(index) for index in range(len(entries))])
 
-    def test_rar_1_5_compression_is_extracted_by_unrar_only(self):
-        self.step_name('Test RAR 1.5 entries: extracted by unRAR, an extraction error without it')
+    def test_rar_1_5_compression_is_an_extraction_error(self):
+        self.step_name('Test RAR 1.5 entries: an extraction error, never an empty success')
 
-        for archive, entries in EXTRACTED_BY_UNRAR_ONLY.items():
+        for archive, entries in RAR_15.items():
             with self.subTest(archive=archive):
                 testfile = TC.path_rar / archive
 
-                if TC.backend == 'rarlab':
-                    path_db = TC.path_tmp / (archive + '.hsb')
-                    path_db.write_text(''.join(
-                        '{}:{}:RAR_ENTRY_{}\n'.format(sha256, size, index)
-                        for index, (size, sha256) in enumerate(entries)))
+                output = self.scan(testfile, '--debug')
 
-                    output = self.scan(testfile, '--allmatch', path_db=path_db)
+                assert output.ec == 0  # clean
+                self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
+                assert (output.out + output.err).count('RAR: Error extracting file') >= len(entries)
 
-                    assert output.ec == 1  # virus
-                    self.verify_output(output.out, expected=[
-                        'RAR_ENTRY_{}.UNOFFICIAL FOUND'.format(index) for index in range(len(entries))])
-                else:
-                    # Nothing is extracted and nothing is reported as extracted:
-                    # each entry fails with an error, never an empty success.
-                    output = self.scan(testfile, '--debug')
-
-                    assert output.ec == 0  # clean
-                    self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
-                    assert (output.out + output.err).count('RAR: Error extracting file') >= len(entries)
-
-                    # Without the alert the archive is clean; with it, it is not.
-                    self.assert_incomplete_alert_only_when_enabled(testfile)
+                self.assert_incomplete_alert_only_when_enabled(testfile)
 
     def test_entry_is_checked_against_its_checksum(self):
         self.step_name('Test an entry with one flipped data byte is not extracted as if it were intact')
@@ -429,10 +413,7 @@ class TC(testcase.TestCase):
             with self.subTest(archive=archive):
                 output = self.scan(TC.path_rar / archive, '--debug')
                 assert output.ec == 0  # clean
-                if TC.backend == 'rarlab':
-                    assert 'RAR: No more files in archive' in output.out + output.err
-                else:
-                    assert re.search(r'RAR: Error \(\d+\) reading file header', output.out + output.err)
+                assert re.search(r'RAR: Error \(\d+\) reading file header', output.out + output.err)
 
         for archive in ('rar4-empty.rar', 'rar5-empty.rar'):
             with self.subTest(archive=archive):
@@ -502,20 +483,15 @@ class TC(testcase.TestCase):
         self.step_name('Test the entry after one skipped for size in a solid archive')
 
         # big.txt exceeds --max-filesize and is skipped; marker.txt follows
-        # it in the same solid stream. unRAR skips without decoding, so it
-        # decodes marker.txt from the wrong window and misses the marker.
-        # The libarchive backend decodes what it skips.
+        # it in the same solid stream. What is skipped is decoded, so
+        # marker.txt is decoded from the right window and the marker is found.
         for archive in ('rar4-solid-skip.rar', 'rar5-solid-skip.rar'):
             with self.subTest(archive=archive):
                 testfile = TC.path_rar / archive
                 output = self.scan(testfile, '--max-filesize=1M --max-scansize=10M')
 
-                if TC.backend == 'rarlab':
-                    assert output.ec == 0  # clean
-                    self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
-                else:
-                    assert output.ec == 1  # virus
-                    self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
+                assert output.ec == 1  # virus
+                self.verify_output(output.out, expected=['{}: RAR_TEST_MARKER.UNOFFICIAL FOUND'.format(testfile.name)])
 
     def test_pending_filter_does_not_reach_next_solid_entry(self):
         self.step_name('Test a filter pending at the end of a solid entry does not alter the next entry')
@@ -674,8 +650,8 @@ class TC(testcase.TestCase):
         self.step_name('Test the work of skipping entries of a solid archive is bounded by the scan size')
 
         # big1.txt and big2.txt each exceed --max-filesize and are skipped;
-        # marker.txt follows them in the same solid stream. The libarchive
-        # backend decodes what it skips, which costs as much as scanning
+        # marker.txt follows them in the same solid stream. What is skipped
+        # is decoded, which costs as much as scanning
         # it would, so --max-scansize bounds it: 3M leaves room for one of
         # them. The scan reports the limit instead of coming back clean.
         for archive in ('rar4-solid-skip-budget.rar', 'rar5-solid-skip-budget.rar'):
@@ -688,14 +664,13 @@ class TC(testcase.TestCase):
                     '{}: Heuristics.Limits.Exceeded.MaxFileSize FOUND'.format(testfile.name)])
 
                 # Exceeding the limit is reported as that, never as an incomplete archive.
-                if TC.backend == 'libarchive':
-                    output = self.scan(testfile, '--max-filesize=1M --max-scansize=3M --alert-exceeds-max=yes --alert-incomplete-rar=yes')
-                    assert output.ec == 1  # virus
-                    assert 'Heuristics.Incomplete.RAR' not in output.out
-                    assert 'Heuristics.Limits.Exceeded' in output.out
+                output = self.scan(testfile, '--max-filesize=1M --max-scansize=3M --alert-exceeds-max=yes --alert-incomplete-rar=yes')
+                assert output.ec == 1  # virus
+                assert 'Heuristics.Incomplete.RAR' not in output.out
+                assert 'Heuristics.Limits.Exceeded' in output.out
 
-                    output = self.scan(testfile, '--max-filesize=1M --max-scansize=3M --alert-incomplete-rar=yes')
-                    assert 'Heuristics.Incomplete.RAR' not in output.out
+                output = self.scan(testfile, '--max-filesize=1M --max-scansize=3M --alert-incomplete-rar=yes')
+                assert 'Heuristics.Incomplete.RAR' not in output.out
 
     def test_archive_comment_is_scanned(self):
         self.step_name('Test RAR 2.9 (packed) and RAR5 archive comments are scanned')
@@ -820,8 +795,6 @@ class TC(testcase.TestCase):
         self.step_name('Test archives whose contents were all scanned are not reported as incomplete')
 
         archives = ['rar4-solid-ppmd.rar', 'rar5-filter-delta.rar', 'rar4-comment.rar', 'rar5-comment.rar']
-        if TC.backend == 'rarlab':
-            archives += ['rar15-small.rar', 'rar20-solid.rar']
         for archive in archives:
             with self.subTest(archive=archive):
                 testfile = TC.path_rar / archive
@@ -867,8 +840,6 @@ class TC(testcase.TestCase):
         # unRAR takes any redirect record with a type for a link and does not
         # unpack the entry. This backend only does when the record is whole,
         # so what a malformed one is attached to is scanned.
-        if TC.backend != 'libarchive':
-            self.skipTest('The RARLAB backend skips the entry')
 
         symlink = rar5_craft.vint(1)
         for name, record in (
@@ -986,8 +957,6 @@ class TC(testcase.TestCase):
 
         # unRAR on a 64-bit system extracts it; this backend allocates 1 GB of
         # window at most.
-        if TC.backend != 'libarchive':
-            self.skipTest('The RARLAB backend extracts the entry')
 
         archive = rar5_craft.Archive.join(
             (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
@@ -1030,8 +999,6 @@ class TC(testcase.TestCase):
         # The window is sized to the data the stream writes, not to the
         # dictionary a 200-byte header declares: a few kilobytes of archive
         # do not allocate a gigabyte.
-        if TC.backend != 'libarchive':
-            self.skipTest('The RARLAB backend allocates the dictionary')
         if not sys.platform.startswith('linux') or TC.valgrind != '':
             self.skipTest('The address space is limited with ulimit -v on Linux, without valgrind')
         if os.getenv('ASAN_OPTIONS') is not None or os.getenv('UBSAN_OPTIONS') is not None:
@@ -1100,8 +1067,6 @@ class TC(testcase.TestCase):
         return None
 
     def skip_unless_window_files_observable(self):
-        if TC.backend != 'libarchive':
-            self.skipTest('The RARLAB backend keeps its window in memory')
         if not sys.platform.startswith('linux') or TC.valgrind != '':
             self.skipTest('The mapping is read from /proc on Linux, without valgrind')
 
