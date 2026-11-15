@@ -28,6 +28,12 @@ The last two rows were written by a `rar` binary (RAR 2.9 archives: Unix host,
 real timestamps; RAR5: no other writer exists), but their exact commands were not
 recorded.
 
+## Taken from libarchive
+
+| Fixture | Covers |
+|---|---|
+| `rar5-bad-tables.rar` | libarchive's `test_read_format_rar5_bad_tables.rar` (BSD-2-Clause, see `libclamarchive/COPYING`): a RAR5 entry that stops at Huffman tables that cannot be built; unRAR extracts the 34 bytes decoded before them |
+
 ## Made by RARLAB RAR 2.50 for DOS
 
 Written by RARLAB's own `RAR.EXE` 2.50 (SHA-256
@@ -77,6 +83,9 @@ data; their headers record the size and CRC of what unRAR decodes from it.
 |---|---|
 | `rar4-filter-e8e9.rar`, `rar4-filter-itanium.rar` | the E8E9 and Itanium filters, which no `rar` we can run writes |
 | `rar4-solid-pending-filter.rar` | a filter defined at the end of `a.txt` for the range where `b.bin` starts: the filter must not reach `b.bin` |
+| `rar4-empty.rar`, `rar5-empty.rar` | a valid main header, an end header and no entries: the archive is read to its end |
+| `rar4-signature-only.rar`, `rar5-signature-only.rar` | the signature and nothing else: no valid main header |
+| `rar5-truncated-header.rar` | the signature and a file header cut short: a header that cannot be read |
 | `rar15-small.rar`, `rar15-solid.rar`, `rar15-rar20-solid.rar` | RAR 1.5 compression |
 | `rar20-lz-text.rar`, `rar20-audio-1ch.rar`, `rar20-audio-4ch.rar`, `rar20-block-switches.rar`, `rar26-lz-audio.rar` | RAR 2.0 and 2.6 compression, including multimedia (audio) blocks |
 

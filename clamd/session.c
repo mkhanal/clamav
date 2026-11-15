@@ -494,9 +494,9 @@ static int print_ver(int desc, char term, const struct cl_engine *engine)
         tstr = cli_ctime(&t, timestr, sizeof(timestr));
         /* cut trailing \n */
         timestr[strlen(tstr) - 1] = '\0';
-        return mdprintf(desc, "ClamAV %s/%u/%s%c", get_version(), (unsigned int)ver, tstr, term);
+        return mdprintf(desc, "ClamAV %s/%u/%s%s%c", get_version(), (unsigned int)ver, tstr, get_distribution_suffix(), term);
     }
-    return mdprintf(desc, "ClamAV %s%c", get_version(), term);
+    return mdprintf(desc, "ClamAV %s%s%c", get_version(), get_distribution_suffix(), term);
 }
 
 static void print_commands(int desc, char term, const struct cl_engine *engine)

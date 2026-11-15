@@ -1,4 +1,4 @@
-.TH "freshclam" "1" "December 4, 2013" "ClamAV @VERSION@" "Clam AntiVirus"
+.TH "freshclam" "1" "December 4, 2013" "ClamCove @CLAMCOVE_VERSION@" "Clam AntiVirus"
 .SH "NAME"
 .LP
 freshclam \- update virus databases

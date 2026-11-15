@@ -287,6 +287,25 @@ class TC(testcase.TestCase):
 
         expected_results = [
             'ClamAV {}'.format(TC.version),
+            re.escape('(ClamCove {})'.format(TC.clamcove_version)),
+        ]
+        self.verify_output(output.out, expected=expected_results)
+
+    def test_clamd_00_clamscan_version(self):
+        '''
+        verify that clamscan --version returns the ClamAV version followed by the ClamCove version
+        '''
+        self.step_name('clamscan version test')
+
+        command = '{valgrind} {valgrind_args} {clamscan} --version'.format(
+            valgrind=TC.valgrind, valgrind_args=TC.valgrind_args, clamscan=TC.clamscan)
+        output = self.execute_command(command)
+
+        assert output.ec == 0  # success
+
+        expected_results = [
+            '^ClamAV {}'.format(re.escape(TC.version)),
+            re.escape('(ClamCove {})'.format(TC.clamcove_version)),
         ]
         self.verify_output(output.out, expected=expected_results)
 
