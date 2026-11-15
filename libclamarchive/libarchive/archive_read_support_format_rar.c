@@ -1172,9 +1172,10 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
    * another version, or an entry whose solid stream mixes decoders, is
    * not decoded: it is an error, never an empty success.
    */
-  if (rar->compression_method >= COMPRESS_METHOD_FASTEST &&
-      rar->compression_method <= COMPRESS_METHOD_BEST &&
-      ((rar->unp_ver != 29 && !rar_is_rar20_version(rar->unp_ver)) ||
+  if ((rar->compression_method >= COMPRESS_METHOD_FASTEST &&
+       rar->compression_method <= COMPRESS_METHOD_BEST &&
+       rar->unp_ver != 29 && !rar_is_rar20_version(rar->unp_ver)) ||
+      (rar->compression_method != COMPRESS_METHOD_STORE &&
        rar->mixed_solid_decoders)) {
     archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_UNSUPPORTED,
                       "Unsupported RAR unpack version %d", rar->unp_ver);
