@@ -99,6 +99,9 @@ class TestCase(unittest.TestCase):
         cls.version = os.getenv("VERSION")
         if cls.version == None:
             raise Exception("VERSION environment variable not defined! Aborting...")
+        cls.clamcove_version = os.getenv("CLAMCOVE_VERSION")
+        if cls.clamcove_version == None:
+            raise Exception("CLAMCOVE_VERSION environment variable not defined! Aborting...")
 
         cls.path_source =      Path(os.getenv("SOURCE"))
         cls.path_build =       Path(os.getenv("BUILD"))
