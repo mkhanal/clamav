@@ -47,17 +47,20 @@ jobs:
 
       - name: Patches apply to the upstream source and give the release tree
         env:
-          REF_NAME: ${{ github.base_ref || github.ref_name }}
+          REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
         run: |
-          if [ "$REF_TYPE" = tag ] && [[ "$REF_NAME" =~ ^clamcove-([0-9]+\.[0-9]+\.[0-9]+)\.[0-9]+$ ]]; then
+          if [ "$REF_TYPE" = tag ]; then
+            [[ "$REF_NAME" =~ ^clamcove-([0-9]+\.[0-9]+\.[0-9]+)\.[0-9]+$ ]] \
+              || { echo "tag $REF_NAME is not clamcove-<clamav version>.<n>"; exit 1; }
             release=$REF_NAME
-          elif [[ "$REF_NAME" =~ ^release/clamav-([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-            release=HEAD
+            version=${BASH_REMATCH[1]}
           else
-            echo "$REF_NAME is neither a clamcove-<version>.<n> tag nor a release/clamav-<version> branch"; exit 1
+            release=HEAD
+            version=$(sed -n '/^project( *ClamAV/,/)/ s/.*VERSION *"\([0-9][0-9.]*\)".*/\1/p' CMakeLists.txt | head -1)
+            [ -n "$version" ] || { echo "cannot read the ClamAV version from CMakeLists.txt"; exit 1; }
           fi
-          upstream="clamav-${BASH_REMATCH[1]}"
+          upstream="clamav-$version"
           git rev-parse --verify --quiet "$upstream^{commit}" > /dev/null \
             || { echo "upstream tag $upstream is not in this repository"; exit 1; }
           .github/dist/check-patches.sh "$upstream" "$release"
