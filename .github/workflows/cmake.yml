@@ -110,6 +110,8 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=x64-windows
           -DLIBCHECK_LIBRARY="$VCPKG_INSTALLATION_ROOT/installed/x64-windows/lib/checkDynamic.lib"
+          -DOPENSSL_CRYPTO_LIBRARY="$VCPKG_INSTALLATION_ROOT/installed/x64-windows/lib/libcrypto.lib"
+          -DOPENSSL_SSL_LIBRARY="$VCPKG_INSTALLATION_ROOT/installed/x64-windows/lib/libssl.lib"
           -DENABLE_STATIC_LIB=ON -DENABLE_EXAMPLES=ON
           ${{ matrix.cmake_args }}
 
