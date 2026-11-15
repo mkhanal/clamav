@@ -1908,8 +1908,15 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	c_method = (int) (compression_info >> 7) & 0x7;
 	c_version = (int) (compression_info & 0x3f);
 
-	rar5->cstate.method = c_method;
-	rar5->cstate.version = c_version + 50;
+	/* A continuation piece carries on the entry the first header
+	 * declared; its own method and sizes decide nothing. */
+	if(rar5->cstate.switch_multivolume) {
+		c_method = rar5->cstate.method;
+		c_version = rar5->cstate.version - 50;
+	} else {
+		rar5->cstate.method = c_method;
+		rar5->cstate.version = c_version + 50;
+	}
 	rar5->file.solid = (compression_info & SOLID) > 0;
 
 	/* An entry that is not part of a stream carries nothing over, and
@@ -1991,8 +1998,17 @@ static int process_head_file(struct archive_read* a, struct rar5 *rar5,
 	if(left > 0 && ARCHIVE_OK != consume(a, left))
 		return ARCHIVE_EOF;
 
-	rar5->file.unpacked_size = (ssize_t) unpacked_size;
-	rar5->file.unknown_size = (file_flags & UNKNOWN_UNPACKED_SIZE) != 0;
+	if(rar5->cstate.switch_multivolume) {
+		unpacked_size = (uint64_t) rar5->file.unpacked_size;
+		if(rar5->file.unknown_size)
+			file_flags |= UNKNOWN_UNPACKED_SIZE;
+		else
+			file_flags &= ~((uint64_t) UNKNOWN_UNPACKED_SIZE);
+	} else {
+		rar5->file.unpacked_size = (ssize_t) unpacked_size;
+		rar5->file.unknown_size =
+		    (file_flags & UNKNOWN_UNPACKED_SIZE) != 0;
+	}
 	if((file_flags & UNKNOWN_UNPACKED_SIZE) == 0 &&
 	    rar5->file.redir_type == REDIR_TYPE_NONE)
 		archive_entry_set_size(entry, unpacked_size);
