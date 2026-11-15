@@ -900,6 +900,7 @@ static void read_comment(struct archive *a, char **comment, uint32_t *comment_si
         }
     }
 
+#ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
     if (cmt.crc_present) {
         uint32_t crc = archive_rar_crc32(data, size);
         if (cmt.in_main_header ? ((crc & 0xffff) != cmt.crc) : (crc != cmt.crc)) {
@@ -908,6 +909,7 @@ static void read_comment(struct archive *a, char **comment, uint32_t *comment_si
             return;
         }
     }
+#endif
 
     if (data == NULL) {
         data = malloc(1);

@@ -58,6 +58,11 @@
 
 /*#define CHECK_CRC_ON_SOLID_SKIP*/
 /*#define DONT_FAIL_ON_CRC_ERROR*/
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#ifndef DONT_FAIL_ON_CRC_ERROR
+#define DONT_FAIL_ON_CRC_ERROR 1
+#endif
+#endif
 /*#define DEBUG*/
 
 #define rar5_min(a, b) (((a) > (b)) ? (b) : (a))

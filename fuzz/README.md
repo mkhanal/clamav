@@ -45,3 +45,8 @@ Every input that once failed is kept in `fuzz/regression/clamav_unrar_iface_fuzz
 
     cmake --build build-fuzz --target clamav_unrar_iface_regression
     ctest --test-dir build-fuzz -R unrar_iface_regression
+
+A fuzzing build (`ENABLE_FUZZ`) defines `FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION`. In it the libarchive RAR readers ignore
+header and data checksum mismatches, so mutated inputs reach the decoders instead of stopping at the first CRC. A normal
+build never defines it, and the CTest test `fuzz_macro_absent` fails if any build tree of a non-fuzzing build does. An
+input that fails only in a fuzzing build still shows a defect, since a checksum can be forged.

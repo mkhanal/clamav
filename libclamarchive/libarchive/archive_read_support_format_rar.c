@@ -47,6 +47,12 @@
 #include "archive_rar_unpack20.h"
 #include "archive_read_rar_info.h"
 
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+#ifndef DONT_FAIL_ON_CRC_ERROR
+#define DONT_FAIL_ON_CRC_ERROR 1
+#endif
+#endif
+
 /* RAR signature, also known as the mark header */
 #define RAR_SIGNATURE "\x52\x61\x72\x21\x1A\x07\x00"
 
@@ -1766,11 +1772,13 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   /* A header CRC mismatch does not stop the read, as with unRAR, unless the
    * header carries a file comment, which unRAR does not read past. */
   if ((crc32_computed & 0xffff) != crc32_read) {
+#ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
     if (rar->file_flags & FHD_COMMENT) {
       archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
         "Header CRC error");
       return (ARCHIVE_FATAL);
     }
+#endif
     rar->header_crc_failed = 1;
   }
   p = h;

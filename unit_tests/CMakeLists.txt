@@ -382,6 +382,9 @@ list(APPEND ENVIRONMENT "OPENSSL_LIB_DIR=${OPENSSL_LIB_DIR}")
 #                     `ctest -V -R libclamav_valgrind_test`
 #
 
+add_test(NAME fuzz_macro_absent
+    COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_BINARY_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/check_no_fuzz_macro.cmake)
+
 add_test(NAME libclamav COMMAND ${PythonTest_COMMAND};libclamav_test.py
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 set_property(TEST libclamav PROPERTY ENVIRONMENT ${ENVIRONMENT})
