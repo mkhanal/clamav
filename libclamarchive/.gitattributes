@@ -1,0 +1,3 @@
+# Vendored libarchive: keep every byte as released (CRLF included) so the
+# tree can be diffed against the release tarball.
+* -text
