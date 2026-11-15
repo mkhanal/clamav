@@ -69,6 +69,7 @@
 
 #ifdef _WIN32
 #include <io.h>
+#include <windows.h>
 #endif
 
 #include <archive.h>
@@ -279,8 +280,13 @@ static char *next_volume_name(const char *path, int new_numbering)
 
 static int file_exists(const char *path)
 {
+#ifdef _WIN32
+    DWORD attributes = GetFileAttributesA(path);
+    return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
+#else
     struct stat st;
     return stat(path, &st) == 0 && !S_ISDIR(st.st_mode);
+#endif
 }
 
 static void free_volumes(unrar_handle_t *h)
@@ -959,7 +965,7 @@ static void read_comment(struct archive *a, char **comment, uint32_t *comment_si
 static cl_unrar_error_t header_error(unrar_handle_t *h, int r)
 {
     if (r == ARCHIVE_EOF) {
-        return UNRAR_BREAK;
+        return archive_read_rar_header_damaged(h->archive) ? UNRAR_ERR : UNRAR_BREAK;
     }
     if (archive_read_has_encrypted_entries(h->archive) > 0 && h->entry != NULL &&
         archive_entry_is_metadata_encrypted(h->entry)) {
@@ -1085,6 +1091,7 @@ cl_unrar_error_t unrar_peek_file_header(void *hArchive, unrar_metadata_t *file_m
     }
     file_metadata->encrypted = info.is_encrypted ? 1 : 0;
     file_metadata->is_dir    = info.is_dir ? 1 : 0;
+    file_metadata->is_link   = (info.redir_type != ARCHIVE_RAR_REDIR_NONE) ? 1 : 0;
     file_metadata->method    = (uint8_t)(info.format == ARCHIVE_RAR_INFO_FORMAT_RAR5 ? info.method + RAR4_METHOD_STORE : info.method);
     convert_name(&info, file_metadata->filename, UNRAR_NAME_BUFFER_SIZE);
 
@@ -1205,12 +1212,13 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
         }
         if (r < ARCHIVE_WARN) {
             unrar_dbgmsg("unrar_extract_file: %s\n", archive_error_string(h->archive));
-            if (archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_UNSUPPORTED ||
-                archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_CHECKSUM) {
+            if (archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_UNSUPPORTED) {
                 status         = UNRAR_ERR;
                 entry_rejected = 1;
             } else if (info.split_after) {
                 status = UNRAR_EOPEN;
+            } else {
+                status = UNRAR_EDATA;
             }
             break;
         }
@@ -1236,7 +1244,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
     }
     close(fd);
 
-    if (status == UNRAR_OK) {
+    if (status == UNRAR_OK || status == UNRAR_EDATA) {
         h->state = HEADER_NONE;
         unrar_dbgmsg("unrar_extract_file: Extracted file to: %s\n", destPath);
     } else if (entry_rejected) {
@@ -1252,6 +1260,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
 cl_unrar_error_t unrar_skip_file(void *hArchive)
 {
     unrar_handle_t *h = (unrar_handle_t *)hArchive;
+    cl_unrar_error_t status;
 
     if (NULL == h) {
         unrar_dbgmsg("unrar_skip_file: Invalid arguments.\n");
@@ -1268,8 +1277,9 @@ cl_unrar_error_t unrar_skip_file(void *hArchive)
         }
         return h->status;
     }
-    if (skip_current(h) != UNRAR_OK) {
-        return UNRAR_ERR;
+    status = skip_current(h);
+    if (status != UNRAR_OK) {
+        return status;
     }
     unrar_dbgmsg("unrar_skip_file: File skipped.\n");
     return UNRAR_OK;
@@ -1283,9 +1293,9 @@ cl_unrar_error_t unrar_set_skip_limits(void *hArchive, uint64_t max_bytes, uint6
         unrar_dbgmsg("unrar_set_skip_limits: Invalid arguments.\n");
         return UNRAR_ERR;
     }
-    h->skip_bytes_limited   = max_bytes != 0;
-    h->skip_bytes_left      = max_bytes;
-    h->skip_deadline_usec   = deadline_usec;
+    h->skip_bytes_limited = max_bytes != 0;
+    h->skip_bytes_left    = max_bytes;
+    h->skip_deadline_usec = deadline_usec;
     return UNRAR_OK;
 }
 
