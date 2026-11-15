@@ -504,7 +504,7 @@
 /* Version suffix for package */
 #define VERSION_SUFFIX "@VERSION_SUFFIX@"
 
-/* ClamCove distribution version: <clamav version>-<release> */
+/* ClamCove distribution version: <clamav version>.<release> */
 #define CLAMCOVE_VERSION "@CLAMCOVE_VERSION@"
 
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most

@@ -103,7 +103,7 @@ int drop_privileges(const char *const user, const char *const log_file);
 
 const char *get_version(void);
 
-/* " (ClamCove <clamav version>-<release>)", appended after the ClamAV version in version output */
+/* " (ClamCove <clamav version>.<release>)", appended after the ClamAV version in version output */
 const char *get_distribution_suffix(void);
 int match_regex(const char *filename, const char *pattern);
 int cli_is_abspath(const char *path);
