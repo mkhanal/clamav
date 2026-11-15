@@ -1193,6 +1193,16 @@ int recvloop(int *socketds, unsigned nsockets, struct cl_engine *engine, unsigne
         options.heuristic |= CL_SCAN_HEURISTIC_ENCRYPTED_DOC;
     }
 
+    if (optget(opts, "AlertIncompleteRAR")->enabled) {
+        if (options.parse & CL_SCAN_PARSE_ARCHIVE) {
+            logg(LOGG_INFO, "Alerting of incomplete RAR archives enabled.\n");
+            options.heuristic |= CL_SCAN_HEURISTIC_INCOMPLETE_RAR;
+        } else {
+            logg(LOGG_WARNING, "Incomplete RAR archive alerting requested, but archive support "
+                               "is disabled!\n");
+        }
+    }
+
     /* TODO: Remove deprecated option in a future feature release. */
     if (optget(opts, "BlockMax")->enabled) {
         logg(LOGG_WARNING, "Using deprecated option \"BlockMax\" to enable heuristic alerts "
