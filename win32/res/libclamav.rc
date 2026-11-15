@@ -1,4 +1,4 @@
 #define RES_FNAME "libclamav.dll"
 #define RES_NAME "libclamav"
-#define RES_FDESC "ClamAV - libclamav"
+#define RES_FDESC "ClamCove - libclamav"
 #include "common.rc"
