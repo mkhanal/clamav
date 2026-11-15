@@ -775,3 +775,83 @@ class TC(testcase.TestCase):
                     (TC.path_rar / 'rar5-stored-checked.rar').read_bytes())
                 archive.edit_file(0, edit)
                 self.assert_both_entries_found('header-' + name + '.rar', archive, complete)
+
+    def entry_is_found(self, testfile, entry):
+        size, sha256 = entry
+        path_db = TC.path_tmp / (sha256 + '.hsb')
+        path_db.write_text('{}:{}:RAR_ENTRY\n'.format(sha256, size))
+
+        output = self.scan(testfile, path_db=path_db)
+        return 'FOUND' in output.out
+
+    def test_rar5_entry_with_a_header_the_reader_refuses_does_not_end_the_archive(self):
+        self.step_name('Test the entries after one whose RAR5 header is refused are still scanned')
+
+        # What unRAR extracts, this backend extracts, whatever the header of the
+        # first entry declares: a solid entry with no window before it, a
+        # dictionary of up to 4 GB or a name of any length. Where unRAR cannot
+        # extract the entry (no name, no data declared), the entry after it is
+        # still scanned and the archive is not reported as complete.
+        both = (COMPRESSED_ENTRY, STORED_ENTRY)
+        for name, main_flags, edit, found, complete in (
+            ('solid-without-window', None, lambda h: h.set_compression(solid=True), both, True),
+            ('solid-without-window-in-solid-archive', 4, lambda h: h.set_compression(solid=True), both, True),
+            ('dictionary-128M', None, lambda h: h.set_compression(dictionary=10), both, True),
+            ('dictionary-1G', None, lambda h: h.set_compression(dictionary=13), both, True),
+            ('dictionary-4G', None, lambda h: h.set_compression(dictionary=15), both, True),
+            ('solid-dictionary-1G', 4, lambda h: h.set_compression(dictionary=13), both, True),
+            ('name-of-3000-bytes', None, lambda h: setattr(h, 'name', b'a' * 3000), both, True),
+            ('no-name', None, lambda h: setattr(h, 'name', b''), (STORED_ENTRY,), False),
+            ('no-data-declared', None, lambda h: (setattr(h, 'has_data', False), setattr(h, 'data_size', 0)), (STORED_ENTRY,), False),
+        ):
+            with self.subTest(header=name):
+                archive = rar5_craft.Archive.join(
+                    (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
+                    (TC.path_rar / 'rar5-stored-checked.rar').read_bytes())
+                if main_flags is not None:
+                    archive.set_main_flags(main_flags)
+                archive.edit_file(0, edit)
+                if name == 'no-data-declared':
+                    archive.files()[0].data = b''
+                testfile = self.write_rar5('refused-' + name + '.rar', archive)
+
+                for entry in both:
+                    assert self.entry_is_found(testfile, entry) == (entry in found)
+
+                output = self.scan(testfile, '--alert-incomplete-rar=yes')
+                assert ('Heuristics.Incomplete.RAR' in output.out) == (not complete)
+
+    def test_rar5_solid_entry_declaring_a_larger_dictionary_than_its_stream(self):
+        self.step_name('Test a solid RAR5 entry that declares another dictionary size than the entries before it is extracted')
+
+        archive = rar5_craft.Archive.join(
+            (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
+            (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes())
+        archive.set_main_flags(4)
+        for dictionary in (1, 6):
+            with self.subTest(dictionary=dictionary):
+                archive.edit_file(1, lambda h: h.set_compression(solid=True, dictionary=dictionary))
+                testfile = self.write_rar5('solid-dictionary-{}.rar'.format(dictionary), archive)
+
+                self.assert_entry_found(testfile, COMPRESSED_ENTRY)
+                output = self.scan(testfile, '--alert-incomplete-rar=yes')
+                assert 'Heuristics.Incomplete.RAR' not in output.out
+
+    def test_rar5_dictionary_beyond_what_is_allocated_is_reported(self):
+        self.step_name('Test a RAR5 solid stream with a dictionary larger than 1 GB is reported incomplete and the entries after it are scanned')
+
+        # unRAR on a 64-bit system extracts it; this backend allocates 1 GB of
+        # window at most.
+        if TC.backend != 'libarchive':
+            self.skipTest('The RARLAB backend extracts the entry')
+
+        archive = rar5_craft.Archive.join(
+            (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
+            (TC.path_rar / 'rar5-stored-checked.rar').read_bytes())
+        archive.set_main_flags(4)
+        archive.edit_file(0, lambda h: h.set_compression(dictionary=15))
+        testfile = self.write_rar5('solid-dictionary-4G.rar', archive)
+
+        self.assert_entry_found(testfile, STORED_ENTRY)
+        output = self.scan(testfile, '--alert-incomplete-rar=yes')
+        assert 'Heuristics.Incomplete.RAR' in output.out
