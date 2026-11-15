@@ -114,7 +114,7 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET=x64-windows
           -DLIBCHECK_LIBRARY="$VCPKG_INSTALLATION_ROOT/installed/x64-windows/lib/checkDynamic.lib"
-          -DENABLE_STATIC_LIB=ON
+          -DENABLE_STATIC_LIB=OFF
           ${{ matrix.cmake_args }}
 
       - name: Build
