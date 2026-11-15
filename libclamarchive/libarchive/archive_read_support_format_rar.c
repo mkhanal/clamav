@@ -1586,6 +1586,14 @@ archive_read_rar_skip_data(struct archive *_a,
 }
 
 int
+archive_read_rar_set_output_bound(struct archive *_a, uint64_t bound)
+{
+  if (rar_info_reader(_a, "rar") != NULL)
+    return (ARCHIVE_OK);
+  return (__archive_read_rar5_set_output_bound(_a, bound));
+}
+
+int
 archive_read_rar_header_damaged(struct archive *_a)
 {
   struct archive_read *a;

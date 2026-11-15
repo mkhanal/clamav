@@ -155,6 +155,9 @@ if(LLVM_FOUND)
 endif()
 target_include_directories(check_clamav PRIVATE ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/libclamav ${CMAKE_BINARY_DIR})
 target_compile_definitions(check_clamav PUBLIC OBJDIR="${OBJDIR}" SRCDIR="${SRCDIR}")
+if(ENABLE_UNRAR AND ENABLE_UNRAR_LIBARCHIVE)
+    target_compile_definitions(check_clamav PRIVATE UNRAR_BACKEND_LIBARCHIVE)
+endif()
 ADD_CUSTOM_COMMAND(TARGET check_clamav POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/input/clamav.hdb ${CMAKE_CURRENT_BINARY_DIR}/input/.)
 
