@@ -18,6 +18,25 @@ endif()
 
 if (ENABLE_UNRAR)
     add_definitions(-DHAVE_UNRAR)
+    if (ENABLE_UNRAR_LIBARCHIVE)
+        add_definitions(-DHAVE_UNRAR_LIBARCHIVE)
+    endif()
+endif()
+
+# The library the unrar interface is built on: RARLAB's libclamunrar, or the
+# vendored libarchive when ENABLE_UNRAR_LIBARCHIVE is set.
+set(UNRAR_TEST_DEPENDS "")
+set(UNRAR_BACKEND "none")
+if (ENABLE_UNRAR)
+    if (ENABLE_UNRAR_LIBARCHIVE)
+        set(UNRAR_BACKEND "libarchive")
+        set(UNRAR_TEST_DEPENDS ClamAV::libunrar_iface)
+        set(UNRAR_BACKEND_STATIC_FILE $<TARGET_PROPERTY:clamav_libarchive_static,IMPORTED_LOCATION>)
+    else()
+        set(UNRAR_BACKEND "rarlab")
+        set(UNRAR_TEST_DEPENDS ClamAV::libunrar ClamAV::libunrar_iface)
+        set(UNRAR_BACKEND_STATIC_FILE $<TARGET_FILE:clamunrar_static>)
+    endif()
 endif()
 
 
@@ -178,7 +197,7 @@ if(WIN32)
         file(TO_NATIVE_PATH $<TARGET_FILE:clamav_static>                        LIBCLAMAV)
         if (ENABLE_UNRAR)
             file(TO_NATIVE_PATH $<TARGET_FILE:clamunrar_iface_static>           LIBCLAMUNRARIFACE)
-            file(TO_NATIVE_PATH $<TARGET_FILE:clamunrar_static>                 LIBCLAMUNRAR)
+            file(TO_NATIVE_PATH ${UNRAR_BACKEND_STATIC_FILE}                    LIBCLAMUNRAR)
         endif()
     else()
         file(TO_NATIVE_PATH $<TARGET_FILE:clamav>                               LIBCLAMAV)
@@ -208,7 +227,10 @@ else()
         set(LD_LIBRARY_PATH $<TARGET_FILE_DIR:ClamAV::libfreshclam>:${LD_LIBRARY_PATH})
     endif()
     if (ENABLE_UNRAR)
-        set(LD_LIBRARY_PATH ${LD_LIBRARY_PATH}:$<TARGET_FILE_DIR:ClamAV::libunrar_iface>:$<TARGET_FILE_DIR:ClamAV::libunrar>)
+        set(LD_LIBRARY_PATH ${LD_LIBRARY_PATH}:$<TARGET_FILE_DIR:ClamAV::libunrar_iface>)
+        if (NOT ENABLE_UNRAR_LIBARCHIVE)
+            set(LD_LIBRARY_PATH ${LD_LIBRARY_PATH}:$<TARGET_FILE_DIR:ClamAV::libunrar>)
+        endif()
     endif()
 
     set(SOURCE             ${CMAKE_SOURCE_DIR})
@@ -236,7 +258,7 @@ else()
         set(LIBCLAMAV            $<TARGET_FILE:clamav_static>)
         if (ENABLE_UNRAR)
             set(LIBCLAMUNRARIFACE    $<TARGET_FILE:clamunrar_iface_static>)
-            set(LIBCLAMUNRAR         $<TARGET_FILE:clamunrar_static>)
+            set(LIBCLAMUNRAR         ${UNRAR_BACKEND_STATIC_FILE})
         endif()
     else()
         set(LIBCLAMAV          $<TARGET_FILE:clamav>)
@@ -291,6 +313,7 @@ set(ENVIRONMENT
     LIBCLAMMSPACK=${LIBCLAMMSPACK}
     LIBCLAMUNRARIFACE=${LIBCLAMUNRARIFACE}
     LIBCLAMUNRAR=${LIBCLAMUNRAR}
+    UNRAR_BACKEND=${UNRAR_BACKEND}
     CHECK_CLAMAV=${CHECK_CLAMAV}
     CHECK_CLAMD=${CHECK_CLAMD}
     CHECK_FPU_ENDIAN=${CHECK_FPU_ENDIAN}
@@ -434,7 +457,7 @@ if(WIN32)
                 -P "${CMAKE_BINARY_DIR}/cmake_install.cmake"
                 DEPENDS
                     check_clamav check_clamd check_fpu_endian
-                    ClamAV::libclamav ClamAV::libfreshclam ClamAV::libunrar ClamAV::libunrar_iface ${LIBMSPACK}
+                    ClamAV::libclamav ClamAV::libfreshclam ${UNRAR_TEST_DEPENDS} ${LIBMSPACK}
                     clambc clamd clamdscan clamdtop clamscan clamsubmit clamconf freshclam-bin sigtool
             )
         else()
@@ -446,7 +469,7 @@ if(WIN32)
                 -P "${CMAKE_BINARY_DIR}/cmake_install.cmake"
                 DEPENDS
                     check_clamav
-                    ClamAV::libclamav ClamAV::libfreshclam ClamAV::libunrar ClamAV::libunrar_iface ClamAV::libmspack
+                    ClamAV::libclamav ClamAV::libfreshclam ${UNRAR_TEST_DEPENDS} ClamAV::libmspack
             )
         endif()
     else()
