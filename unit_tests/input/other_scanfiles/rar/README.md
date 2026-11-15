@@ -9,7 +9,7 @@ drives RARLAB's own `rar` binary (not part of this repository) and nothing else.
 ## Made by RARLAB `rar`
 
 Run `generators/make_rarlab_fixtures.sh` (rar 6.24 for RAR 2.9 archives, rar 7.20
-or later for RAR5 archives; the two `*-skip-budget.rar` archives were made with
+or later for RAR5 archives; the `*-skip-budget.rar` and `*-checked.rar` archives were made with
 rar 6.24 and 7.23).
 
 | Fixture | Covers |
@@ -20,6 +20,7 @@ rar 6.24 and 7.23).
 | `rar4-comment.rar`, `rar5-comment.rar` | archive comment |
 | `rar4-encrypted-data.rar`, `rar4-encrypted-headers.rar`, `rar5-encrypted-data.rar`, `rar5-encrypted-headers.rar` | encrypted entries and headers |
 | `rar4-volume.part1.rar`, `rar4-volume.part2.rar`, `rar5-volume.part1.rar`, `rar5-volume.part2.rar` | a file split across volumes |
+| `rar4-stored-checked.rar`, `rar4-compressed-checked.rar`, `rar5-stored-checked.rar`, `rar5-compressed-checked.rar`, `rar5-blake2-checked.rar`, `rar5-stored-blake2-checked.rar` | one entry each, stored and compressed, with a CRC32 or a BLAKE2sp checksum; the tests flip a data byte |
 | `rar4-filter-audio.rar`, `rar4-filter-delta.rar`, `rar4-filter-e8.rar`, `rar4-filter-rgb.rar`, `rar4-ppmd-e8.rar` | RAR 2.9 standard filters, and a filter over PPMd data |
 | `rar5-filter-delta.rar`, `rar5-filter-e8.rar` | RAR5 filters |
 
