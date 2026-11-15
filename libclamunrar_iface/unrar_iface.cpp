@@ -432,6 +432,20 @@ done:
     return status;
 }
 
+cl_unrar_error_t unrar_set_skip_limits(void* hArchive, uint64_t max_bytes, uint64_t deadline_usec)
+{
+    (void)max_bytes;
+    (void)deadline_usec;
+
+    if (NULL == hArchive) {
+        unrar_dbgmsg("unrar_set_skip_limits: Invalid arguments.\n");
+        return UNRAR_ERR;
+    }
+
+    /* unRAR skips an entry by seeking over it, which costs nothing to bound. */
+    return UNRAR_OK;
+}
+
 void unrar_close(void* hArchive)
 {
     RARCloseArchive(hArchive);
