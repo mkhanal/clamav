@@ -759,29 +759,3 @@ rar20_decoder_fill(struct rar20_decoder *d, rar20_byte_fn next_byte,
 	}
 	return (RAR20_OK);
 }
-
-void
-rar20_decoder_finish_entry(struct rar20_decoder *d, rar20_byte_fn next_byte,
-    void *ctx)
-{
-	int sym, err, end_of_block;
-
-	if (!d->hdr_read)
-		return;
-	d->br.next_byte = next_byte;
-	d->br.ctx = ctx;
-
-	if (d->is_audio) {
-		err = huffman_read_sym(&d->audio.decoders[d->audio.cur_chan],
-		    &d->br, &sym);
-		end_of_block = sym == 256;
-	} else {
-		err = huffman_read_sym(&d->lz.main_decoder, &d->br, &sym);
-		end_of_block = sym == 269;
-	}
-	if (err != RAR20_OK || !end_of_block)
-		return;
-	d->hdr_read = 0;
-	if (read_block_header(d) != RAR20_OK)
-		d->hdr_read = 0;
-}

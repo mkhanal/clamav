@@ -72,14 +72,4 @@ int rar20_decoder_fill(struct rar20_decoder *, rar20_byte_fn next_byte,
     void *ctx, unsigned char *win, size_t mask, int64_t *position,
     int64_t end, int64_t entry_end);
 
-/*
- * Called when the entry's output is complete. The data of an entry of a
- * solid stream can end with the end of its block and the header and tables
- * of the next block, which the next entry then continues with: they are read
- * if they are there. Nothing is reported if they are not: the input can
- * simply end.
- */
-void rar20_decoder_finish_entry(struct rar20_decoder *, rar20_byte_fn next_byte,
-    void *ctx);
-
 #endif
