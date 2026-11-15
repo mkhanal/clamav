@@ -253,6 +253,16 @@ class TC(testcase.TestCase):
         assert output.ec == 1  # virus
         self.verify_output(output.out, expected=['{}: Heuristics.Limits.Exceeded.MaxScanSize FOUND'.format(damaged)])
 
+    def test_rar4_data_decoded_before_damage_is_extracted(self):
+        self.step_name('Test a RAR 2.9 entry with damaged data yields what was decoded before the damage')
+
+        # Byte 69 is in the compressed data of the only entry: unRAR writes the first 2203 bytes before the damage stops it, and so does this backend.
+        for offset, name, (size, sha256) in (
+            (69, 'data', (2203, '0d6115a71f5b48e5653d632a76d307f6690ce14184fde7910995cecd52fc1a43')),
+        ):
+            with self.subTest(byte=name):
+                self.scan_damaged_copy('rar4-compressed-checked.rar', offset, size, sha256, 'rar4-compressed-checked.rar-' + name)
+
     def test_solid_ppmd_stream_continues_across_entries(self):
         self.step_name('Test a solid RAR 2.9 PPMd stream is decoded entry after entry')
 
