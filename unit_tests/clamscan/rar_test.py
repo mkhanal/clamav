@@ -291,6 +291,15 @@ class TC(testcase.TestCase):
                     'RAR250_{}.UNOFFICIAL FOUND'.format(name.replace('.', '_')) for name, _, _ in entries])
                 assert 'RAR: Error extracting file' not in output.out + output.err
 
+    def test_solid_entry_with_an_oversized_unpacked_size_is_rejected_without_overflow(self):
+        self.step_name('Test a solid RAR 2.0 entry declaring an unpacked size near INT64_MAX is rejected cleanly')
+
+        testfile = TC.path_rar / 'rar250-solid-size-overflow.rar'
+        output = self.scan(testfile, '--debug')
+
+        assert output.ec in (0, 1)
+        assert 'runtime error' not in output.out + output.err
+
     def test_damaged_rar_2_0_data_is_not_extracted_as_intact(self):
         self.step_name('Test RAR 2.0 / 2.6 data with one flipped byte is reported, not extracted as if it were intact')
 
