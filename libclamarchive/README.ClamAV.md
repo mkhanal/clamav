@@ -66,6 +66,11 @@ Where the port differs from rardecode:
   history is cleared as well as the tables and audio state; rardecode keeps
   them from the previous file.
 - Matches are cut at the end of the entry's output instead of carried over.
+- An empty entry of a solid stream still has its block header and tables read
+  when its data starts a block (`rar20_decoder_read_header`). RAR 2.50 writes
+  them there when an empty file comes first, and the next entry continues with
+  them. rardecode reads nothing for an entry of no output, and cannot decode
+  the entries after it (`rar250-solid-small.rar`).
 - The window is libarchive's RAR window, shared with nothing else; the entries
   of one solid stream must all use the RAR 2.0 / 2.6 decoder (rardecode
   refuses mixed decoders as well), otherwise the entry is an error.

@@ -49,6 +49,7 @@ fewer than 3 bytes are not listed there: no signature matches them.
 | `rar250-solid-m1.rar`, `rar250-solid-m2.rar`, `rar250-solid-m3.rar`, `rar250-solid-m5.rar` | `a -s [-m1\|-m2\|-m5] SMn.RAR TEXT.TXT S0*.TXT` | solid, methods 1, 2, 3 (default) and 5 |
 | `rar250-solid-mm.rar` | `a -s -mm SMM.RAR MONO8.WAV QUAD.RAW S01.TXT S02.TXT RAND.BIN` | solid multimedia: audio and LZ blocks alternate between entries |
 | `rar250-mm-m5.rar` | `a -mm -m5 NSMM5.RAR MONO8.WAV QUAD.RAW TEXT.TXT` | non-solid multimedia, method 5 |
+| `rar250-solid-small.rar` | `a -s SSMALL.RAR S01.TXT EMPTY.DAT S02.TXT ONE.DAT S03.TXT TWO.DAT S04.TXT` | solid with empty, 1-byte and 2-byte entries; RAR sorts by extension, so the empty entry comes first and carries the block header and tables of the entries after it |
 | `rar250-solid-volumes.rar`, `.r00`, `.r01` | `a -s -m5 -v8 SVOL.RAR RAND.BIN TEXT.TXT S0*.TXT` | a solid set of 3 volumes, entries split across volumes |
 | `rar250-split.rar`, `.r00`, `.r01`, `.r02` | `a -m3 -v6 SPLIT.RAR MONO8.WAV S01.TXT` | a compressed entry split across 4 volumes |
 

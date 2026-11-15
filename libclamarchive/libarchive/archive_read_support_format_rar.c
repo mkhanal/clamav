@@ -415,6 +415,7 @@ struct rar
    * whose data then starts at solid_base in the window. */
   char solid_state_valid;
   char end_marker_read;
+  char empty_entry_header_read;
   int64_t solid_base;
 
   /* Raw header fields for archive_read_rar_entry_info(). */
@@ -1124,6 +1125,34 @@ archive_read_format_rar_read_header(struct archive_read *a,
 }
 
 static int
+read_empty_entry_header20(struct archive_read *a)
+{
+  struct rar *rar = a->format->data;
+  int r;
+
+  rar->empty_entry_header_read = 1;
+  if (rar->dec20 == NULL || rar->mixed_solid_decoders ||
+      rar->packed_size <= 0 || (rar->file_flags & FHD_PASSWORD))
+    return (ARCHIVE_OK);
+  if ((r = rar_br_preparation(a, &rar->br)) < ARCHIVE_WARN)
+    return (r);
+  switch (rar20_decoder_read_header(rar->dec20, rar20_next_byte, a))
+  {
+  case RAR20_OK:
+    return (ARCHIVE_OK);
+  case RAR20_ERR_OUT_OF_DATA:
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                      "Truncated RAR file data");
+    rar->valid = 0;
+    return (ARCHIVE_FAILED);
+  default:
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                      "Bad RAR file data");
+    return (ARCHIVE_FAILED);
+  }
+}
+
+static int
 archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
                                   size_t *size, int64_t *offset)
 {
@@ -1157,6 +1186,12 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
   }
 
   *buff = NULL;
+  if (rar->unp_size == 0 && !rar->entry_eof && !rar->empty_entry_header_read &&
+      (rar->main_flags & MHD_SOLID) &&
+      rar->compression_method != COMPRESS_METHOD_STORE &&
+      rar_is_rar20_version(rar->unp_ver) &&
+      (ret = read_empty_entry_header20(a)) != ARCHIVE_OK)
+    return (ret);
   if (rar->entry_eof || rar->offset_seek >= rar->unp_size) {
     *size = 0;
     *offset = rar->offset;
@@ -2194,6 +2229,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
     rar->solid_decoder = rar_decoder_class(rar->unp_ver);
   }
   rar->end_marker_read = 0;
+  rar->empty_entry_header_read = 0;
   rar->solid_base = rar->lzss.position;
   rar->offset = rar->lzss.position;
   rar->offset_seek = 0;
