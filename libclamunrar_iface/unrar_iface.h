@@ -55,7 +55,8 @@ typedef enum cl_unrar_error_tag {
     UNRAR_ERR,
     UNRAR_EOPEN,
     UNRAR_EDATA,
-    UNRAR_ELIMIT
+    UNRAR_ELIMIT,
+    UNRAR_ESPACE
 } cl_unrar_error_t;
 
 typedef struct unrar_metadata_tag {

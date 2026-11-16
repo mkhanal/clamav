@@ -1245,6 +1245,9 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
             if (archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_UNSUPPORTED) {
                 status         = UNRAR_ERR;
                 entry_rejected = 1;
+            } else if (archive_errno(h->archive) == ARCHIVE_RAR_ERRNO_WINDOW) {
+                status         = UNRAR_ESPACE;
+                entry_rejected = 1;
             } else if (info.split_after) {
                 status = UNRAR_EOPEN;
             } else {
@@ -1263,7 +1266,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
             while (size > 0) {
                 ssize_t n = write(fd, p, size);
                 if (n <= 0) {
-                    status = UNRAR_ERR;
+                    status = (n < 0 && errno == ENOSPC) ? UNRAR_ESPACE : UNRAR_ERR;
                     break;
                 }
                 p += n;
