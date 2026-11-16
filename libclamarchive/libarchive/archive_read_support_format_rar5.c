@@ -3179,15 +3179,22 @@ static int copy_string(struct archive_read* a, int len, int dist) {
 	const uint64_t write_ptr = rar5->cstate.write_ptr +
 	    rar5->cstate.solid_offset;
 	int i;
+	int overrun = 0;
 
 	if (rar5->cstate.window_buf == NULL)
 		return ARCHIVE_FATAL;
 
-	if (rar5->cstate.write_ptr > rar5->file.unpacked_size ||
-	    len > rar5->file.unpacked_size - rar5->cstate.write_ptr) {
+	if (rar5->cstate.write_ptr > rar5->file.unpacked_size) {
 		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
 		    "Uncompressed data exceeds declared size");
 		return rar5->main.solid ? ARCHIVE_FATAL : ARCHIVE_FAILED;
+	}
+
+	/* A match that reaches past the declared size still delivers the
+	 * bytes up to it, as unRAR does; the error follows. */
+	if (len > rar5->file.unpacked_size - rar5->cstate.write_ptr) {
+		len = (int)(rar5->file.unpacked_size - rar5->cstate.write_ptr);
+		overrun = 1;
 	}
 
 	/* The unpacker spends most of the time in this function. It would be
@@ -3213,6 +3220,13 @@ static int copy_string(struct archive_read* a, int len, int dist) {
 	}
 
 	rar5->cstate.write_ptr += len;
+
+	if (overrun) {
+		archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+		    "Uncompressed data exceeds declared size");
+		return rar5->main.solid ? ARCHIVE_FATAL : ARCHIVE_FAILED;
+	}
+
 	return ARCHIVE_OK;
 }
 
