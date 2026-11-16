@@ -149,6 +149,20 @@ typedef struct unrar_handle_tag {
  * Volume names, as unRAR derives the next volume's name from the current one.
  */
 
+static int is_out_of_space(int error)
+{
+    switch (error) {
+        case ENOSPC:
+        case EFBIG:
+#ifdef EDQUOT
+        case EDQUOT:
+#endif
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 static int is_digit(char c)
 {
     return c >= '0' && c <= '9';
@@ -1266,7 +1280,7 @@ cl_unrar_error_t unrar_extract_file(void *hArchive, const char *destPath, char *
             while (size > 0) {
                 ssize_t n = write(fd, p, size);
                 if (n <= 0) {
-                    status = (n < 0 && errno == ENOSPC) ? UNRAR_ESPACE : UNRAR_ERR;
+                    status = (n < 0 && is_out_of_space(errno)) ? UNRAR_ESPACE : UNRAR_ERR;
                     break;
                 }
                 p += n;

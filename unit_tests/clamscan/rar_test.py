@@ -1269,6 +1269,25 @@ class TC(testcase.TestCase):
         assert re.search(r'RAR window: \d+ bytes in anonymous memory', out), out
         assert 'in an unnamed file' not in out, out
 
+    def test_entry_that_exceeds_the_file_size_limit_raises_the_space_alert(self):
+        self.step_name('Test an entry that cannot be written for the size limit of the process raises the space alert like a full disk')
+
+        self.skip_unless_linux_libarchive()
+        import resource
+
+        def limit_files_to_1000_bytes():
+            signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+            resource.setrlimit(resource.RLIMIT_FSIZE, (1000, 1000))
+
+        tempdir = TC.path_tmp / 'file-size-limit-tmp'
+        tempdir.mkdir()
+        command = [str(TC.clamscan), '--alert-exceeds-max=yes', '--tempdir={}'.format(tempdir),
+                   '-d', str(TC.path_marker_start_db), str(TC.path_rar / 'rar5-stored-checked.rar')]
+        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                 preexec_fn=limit_files_to_1000_bytes, timeout=300)
+
+        assert 'Heuristics.Limits.Exceeded.RARSpace FOUND' in process.stdout, process.stdout
+
     def test_window_file_is_close_on_exec_from_creation(self):
         self.step_name('Test the descriptor of a window file is created close-on-exec')
 
