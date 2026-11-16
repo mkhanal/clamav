@@ -11,4 +11,4 @@
 99	ci-and-tests	none	CI workflows and release inputs under .github	^ci: 
 05	clamcove-naming	patch	ClamCove version string and NOTICE	ClamCove|^(version|notice|readme): |^Version as |^unit_tests: Pass CLAMCOVE_VERSION
 06	windows-build-fixes	patch	Windows with vcpkg: OpenSSL library directory taken from the release file of a per-configuration list	^(libclamav_rust: Take OpenSSL|Windows: )
-98	tests-and-docs	paths	Tests, test inputs, fuzz targets, RAR parity tooling and README of all the changes above, in one patch	unit_tests tools fuzz README.md
+98	tests-and-docs	paths	Tests, test inputs, fuzz targets, RAR parity tooling and README of all the changes above, in one patch	unit_tests tools fuzz README.md CONTRIBUTING.md

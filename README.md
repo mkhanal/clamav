@@ -167,6 +167,9 @@ improvements to
 [our documentation](https://github.com/Cisco-Talos/clamav-documentation),
 and also [bug reports](https://github.com/Cisco-Talos/clamav/issues).
 
+ClamCove changes follow [CONTRIBUTING.md](CONTRIBUTING.md): every pull request
+is a clean series of logical commits.
+
 Thanks for joining us!
 
 ## Licensing
