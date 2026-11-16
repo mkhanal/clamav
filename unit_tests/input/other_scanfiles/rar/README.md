@@ -109,3 +109,8 @@ this repository decodes RAR 1.5: a scan reports an extraction error for each
 RAR 1.5 entry, and for the RAR 2.0 entry of `rar15-rar20-solid.rar`, whose solid
 stream starts with RAR 1.5; the official ClamAV 1.5.4 build extracts them as
 recorded in `rar_test.py`.
+
+`rar4-solid-ppmd-invalid-model.rar` is a fuzzer reproducer (its checksums are
+wrong): the first entry's data reaches a PPMd block header that continues a model
+no block set up, and the second entry is flagged solid. The scan must end without
+a crash, with the first entry extracted.
