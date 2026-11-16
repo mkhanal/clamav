@@ -1052,6 +1052,18 @@ class TC(testcase.TestCase):
         assert 'not supported' not in output.out
         assert 'Heuristics.Limits.Exceeded' not in output.out
 
+    def test_rar5_match_more_than_2_gigabytes_back_is_decoded(self):
+        self.step_name('Test a RAR5 match at a distance above 2 GB copies the bytes from there')
+
+        # The window of the stream is 4 GB, a file in the temporary directory.
+        if shutil.disk_usage(TC.path_tmp).free < 6 << 30:
+            self.skipTest('The window of 4 GB is a file in the temporary directory')
+
+        testfile = TC.path_rar / 'rar5-match-2gib-back.rar'
+        marker = (52, '0fe42d6760a8bac7127419eb837b8668481794c6f15243239441f49e4e9ee066')
+
+        self.assert_entry_found(testfile, marker, self.LIMITS_FOR_LARGE_WINDOWS)
+
     def test_rar5_entry_whose_window_cannot_be_had_is_reported(self):
         self.step_name('Test a RAR5 entry whose window cannot be allocated raises the limits and incomplete alerts only when they are enabled')
 
