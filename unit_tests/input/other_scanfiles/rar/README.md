@@ -53,8 +53,8 @@ to `S06.TXT` (lines `line N of file 1: x...`, 19 to 2076 bytes), `RAND.BIN`
 bytes) of 8-bit audio-like data, and `EMPTY.DAT`, `ONE.DAT` and `TWO.DAT` of 0, 1
 and 2 bytes. DOS RAR 2.50 accepts `-md` only on OS/2, so every archive uses its
 default dictionary. The glob was expanded by RAR (`set -f` in the shell). The
-expected SHA-256 of each entry in `rar_test.py` is what the RARLAB backend
-extracts (black box), and it equals the SHA-256 of the input file. Entries of
+expected SHA-256 of each entry in `rar_test.py` is what the official ClamAV
+1.5.4 build extracts (black box), and it equals the SHA-256 of the input file. Entries of
 fewer than 3 bytes are not listed there: no signature matches them.
 
 | Fixture | Command (`RAR.EXE`, `-y` omitted) | Covers |
@@ -76,7 +76,7 @@ The crafted `rar20-solid.rar` is gone: its layout (an entry ending with the end
 of the block and the next block's header) was written by the removed encoder and
 no RAR 2.50 archive has it. `rar20-lz-text.rar`, `rar20-audio-1ch.rar`,
 `rar20-audio-4ch.rar`, `rar20-block-switches.rar` and `rar26-lz-audio.rar` stay:
-both backends extract them identically.
+the official ClamAV 1.5.4 build and ClamCove extract them identically.
 
 ## Crafted
 
@@ -99,25 +99,13 @@ data; their headers record the size and CRC of what unRAR decodes from it.
 | `rar4-split-unpack-version-change.rar` | a RAR 2.9 entry whose continuation header declares unpack version 20: the parts of a split entry must agree |
 | `rar20-solid-stored-entry.rar` | a RAR 2.0 solid stream with a stored entry between two compressed ones, the last matching back into the first: a stored entry leaves the stream's window alone |
 | `rar20-solid-flag-small-window.rar` | a small RAR 2.0 entry in an archive not marked solid, followed by an entry flagged solid that matches back into it at an offset past the first entry's size |
-| `rar4-split-unpack-version-change.rar` | a RAR 2.9 entry whose continuation header declares unpack version 20: the parts of a split entry must agree |
-| `rar20-solid-stored-entry.rar` | a RAR 2.0 solid stream with a stored entry between two compressed ones, the last matching back into the first: a stored entry leaves the stream's window alone |
-| `rar4-split-unpack-version-change.rar` | a RAR 2.9 entry whose continuation header declares unpack version 20: the parts of a split entry must agree |
-| `rar4-split-unpack-version-change.rar` | a RAR 2.9 entry whose continuation header declares unpack version 20: the parts of a split entry must agree |
 
 `rar4-solid-ppmd-damaged-range.rar` is `rar4-solid-skip-budget.rar` mutated by a
 fuzzer (its checksums are wrong): its second entry continues a PPMd block after
 damaged data left the range decoder mid-symbol.
 
-`rar4-solid-ppmd-damaged-range.rar` is `rar4-solid-skip-budget.rar` mutated by a
-fuzzer (its checksums are wrong): its second entry continues a PPMd block after
-damaged data left the range decoder mid-symbol.
-
-`rar4-solid-ppmd-damaged-range.rar` is `rar4-solid-skip-budget.rar` mutated by a
-fuzzer (its checksums are wrong): its second entry continues a PPMd block after
-damaged data left the range decoder mid-symbol.
-
-Both backends extract the RAR 2.0 and 2.6 archives as recorded in
-`rar_test.py`. No reader in this repository decodes RAR 1.5: with the libarchive
-backend a scan reports an extraction error for each RAR 1.5 entry, and for the
-RAR 2.0 entry of `rar15-rar20-solid.rar`, whose solid stream starts with RAR 1.5;
-with the RARLAB backend they extract as recorded in `rar_test.py`.
+The RAR 2.0 and 2.6 archives extract as recorded in `rar_test.py`. No reader in
+this repository decodes RAR 1.5: a scan reports an extraction error for each
+RAR 1.5 entry, and for the RAR 2.0 entry of `rar15-rar20-solid.rar`, whose solid
+stream starts with RAR 1.5; the official ClamAV 1.5.4 build extracts them as
+recorded in `rar_test.py`.
