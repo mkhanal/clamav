@@ -9,6 +9,6 @@
 03	pcre-container-check	patch	Container constraint of a logical signature checked before its PCRE subsignatures run	^libclamav: Skip PCRE|^unit_tests: Credit the PCRE container test
 04	incomplete-rar-alert	patch	Opt-in alert for RAR archives that could not be fully extracted and scanned	[Ii]ncomplete[- ]RAR|^libclamav: Add an opt-in alert for a RAR archive|^docs: Describe the RAR space alert
 99	ci-and-tests	none	CI workflows and release inputs under .github	^ci: 
-05	clamcove-naming	patch	ClamCove version string and NOTICE	ClamCove|^(version|notice|readme): |^Version as |^unit_tests: Pass CLAMCOVE_VERSION
+05	clamcove-naming	patch	ClamCove version string and NOTICE	ClamCove|^(version|notice|readme): |^Version as |^unit_tests: Pass CLAMCOVE_VERSION|^(docs: List every difference|tools/differences: )
 06	windows-build-fixes	patch	Windows with vcpkg: OpenSSL library directory taken from the release file of a per-configuration list	^(libclamav_rust: Take OpenSSL|Windows: )
-98	tests-and-docs	paths	Tests, test inputs, fuzz targets, RAR parity tooling and README of all the changes above, in one patch	unit_tests tools fuzz README.md CONTRIBUTING.md
+98	tests-and-docs	paths	Tests, test inputs, fuzz targets, RAR parity tooling, README and differences document of all the changes above, in one patch	unit_tests tools fuzz README.md CONTRIBUTING.md docs/DIFFERENCES.md
