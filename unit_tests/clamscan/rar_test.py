@@ -596,6 +596,21 @@ class TC(testcase.TestCase):
                 output = self.scan(testfile, '--max-filesize=1M --max-scansize=3M --alert-incomplete-rar=yes')
                 assert 'Heuristics.Incomplete.RAR' not in output.out
 
+    def test_solid_ppmd_entry_after_a_block_header_without_a_model(self):
+        self.step_name('Test a solid RAR 2.9 entry after a PPMd block header that continues no model does not decode with an absent model')
+
+        # big1.txt ends at a PPMd block header that continues a model no
+        # block set up. big2.txt is flagged solid and must not be decoded
+        # with that model. The scan ends clean, and big1.txt is extracted.
+        testfile = TC.path_rar / 'rar4-solid-ppmd-invalid-model.rar'
+        output = self.scan(testfile)
+
+        assert output.ec == 0  # clean
+        self.verify_output(output.out, expected=['{}: OK'.format(testfile.name)])
+
+        self.assert_entry_extracted('rar4-solid-ppmd-invalid-model.rar',
+            'c3d34030119c715a5742577270f5069924db8bdf7628652dd96f2108a85dbdb5', 30036)
+
     def test_archive_comment_is_scanned(self):
         self.step_name('Test RAR 2.9 (packed) and RAR5 archive comments are scanned')
 

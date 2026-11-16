@@ -472,6 +472,7 @@ static int read_data_compressed(struct archive_read *, const void **, size_t *,
                                 int64_t *, size_t);
 static int rar_br_preparation(struct archive_read *, struct rar_br *);
 static int parse_codes(struct archive_read *);
+static int parse_codes_block(struct archive_read *);
 static int rar_prepare_window(struct archive_read *);
 static int prepare_rar20(struct archive_read *);
 static int expand20(struct archive_read *, int64_t *);
@@ -2763,6 +2764,22 @@ static int
 parse_codes(struct archive_read *a)
 {
   struct rar *rar = a->format->data;
+  int ret         = parse_codes_block(a);
+
+  if (ret != ARCHIVE_OK && rar->is_ppmd_block) {
+    /* No PPMd block follows a failed header: the model is not usable. */
+    __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
+    rar->ppmd_valid      = 0;
+    rar->is_ppmd_block   = 0;
+    rar->start_new_table = 1;
+  }
+  return (ret);
+}
+
+static int
+parse_codes_block(struct archive_read *a)
+{
+  struct rar *rar = a->format->data;
   int i, j, val, n, r;
   unsigned char bitlengths[MAX_SYMBOLS], zerocount, ppmd_flags;
   unsigned int maxorder, ppmd_memory = 0;
@@ -3684,6 +3701,9 @@ expand_ppmd(struct archive_read *a, int64_t *end)
 {
   struct rar *rar = a->format->data;
   int sym, code, length, lzss_offset, i, ret;
+
+  if (rar->is_ppmd_block && !rar->ppmd_valid)
+    goto bad_data;
 
   while (rar->is_ppmd_block && lzss_position(&rar->lzss) < *end)
   {
