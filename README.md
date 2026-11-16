@@ -38,6 +38,8 @@ change it makes accepted into ClamAV, so that it shrinks back to ClamAV.
 | Version output | `ClamAV 1.5.4/...` | `ClamAV 1.5.4/... (ClamCove <version>)`, ClamAV's version first and unchanged ([#13](https://github.com/mkhanal/clamcove/pull/13)) | ClamCove only, never offered |
 | freshclam User-Agent | `ClamAV/1.5.4 (OS: ...)` | Unchanged | None needed |
 
+Every functional difference, with measured gains and losses, limits and risks, parity evidence and how to reproduce them: [docs/DIFFERENCES.md](docs/DIFFERENCES.md).
+
 ## Release patches
 
 Every release ships its changes to the official ClamAV source as patches, next to the complete source tarball. Each patch is
