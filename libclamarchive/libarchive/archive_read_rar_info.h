@@ -137,6 +137,10 @@ struct archive_rar_skip_limit {
 /* The data was read, but its CRC32 or BLAKE2sp does not match the header. */
 #define ARCHIVE_RAR_ERRNO_CHECKSUM	0x5203
 
+/* The window the entry needs cannot be had: too large to address, or no
+ * memory or temporary space to back it. */
+#define ARCHIVE_RAR_ERRNO_WINDOW	0x5204
+
 int archive_read_rar_skip_data(struct archive *,
     const struct archive_rar_skip_limit *);
 

@@ -98,10 +98,21 @@ static const size_t g_unpack_window_size = 0x20000;
  * stream of a solid archive and is decoded when skipped. */
 static const char g_no_name_error[] = "No filename specified";
 
-/* The largest window allocated: the largest dictionary RAR5 archives
- * written by WinRAR for 64-bit systems use. Memory behind it is only
- * committed as the entry is decoded. */
-#define RAR5_MAX_WINDOW_SIZE ((uint64_t)1 << 30)
+/* The window of an entry no system can address, or no system can back. */
+static const char g_window_size_error[] =
+    "Declared dictionary size is not supported";
+static const char g_window_memory_error[] =
+    "Not enough memory for the window of this entry";
+
+/* The largest window allocated. A 64-bit process addresses every window the
+ * format allows (a dictionary of 4 GiB); a 32-bit one, 1 GiB of it. */
+static uint64_t max_window_size(void)
+{
+	if(sizeof(size_t) < 8)
+		return (uint64_t)1 << 30;
+
+	return (uint64_t)1 << 32;
+}
 
 /* Bid returned when the RAR5 signature is found at offset 0.  Bidders
  * conventionally return the number of bits they verified, so an exact
@@ -1707,7 +1718,7 @@ static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
 	if(window_buf == NULL || filtered_buf == NULL) {
 		__archive_rar_window_free(window_buf, (size_t) window_size);
 		__archive_rar_window_free(filtered_buf, (size_t) window_size);
-		return "Not enough memory for the window of this entry";
+		return g_window_memory_error;
 	}
 
 	for(pos = written - keep; pos < written; pos++)
@@ -1752,7 +1763,7 @@ static const char* select_window(struct rar5 *rar5, uint64_t compression_info,
 	    (uint64_t) g_unpack_window_size << ((compression_info >> 10) & 15);
 	const uint64_t output = entry_output(rar5, unpacked_size);
 	const uint64_t stream = (uint64_t) rar5->cstate.solid_offset;
-	uint64_t needed = output > RAR5_MAX_WINDOW_SIZE ? output : output * 2;
+	uint64_t needed = output > max_window_size() ? output : output * 2;
 	uint64_t window_size;
 
 	if(rar5->main.solid || rar5->file.solid)
@@ -1760,8 +1771,8 @@ static const char* select_window(struct rar5 *rar5, uint64_t compression_info,
 
 	window_size = window_size_for(dictionary, needed);
 
-	if(window_size > RAR5_MAX_WINDOW_SIZE)
-		return "Declared dictionary size is not supported";
+	if(window_size > max_window_size())
+		return g_window_size_error;
 
 	if(rar5->main.solid && rar5->cstate.window_buf != NULL) {
 		if(window_size > (uint64_t) rar5->cstate.window_size) {
@@ -4066,9 +4077,8 @@ static int do_uncompress_file(struct archive_read* a) {
 		if(!rar5->main.solid || !rar5->cstate.window_buf) {
 			if((ret = init_unpack(rar5)) != ARCHIVE_OK) {
 				archive_set_error(&a->archive,
-				    ARCHIVE_RAR_ERRNO_UNSUPPORTED,
-				    "Not enough memory for the window of "
-				    "this entry");
+				    ARCHIVE_RAR_ERRNO_WINDOW, "%s",
+				    g_window_memory_error);
 				return ret;
 			}
 		}
@@ -4453,7 +4463,10 @@ static int rar5_read_data(struct archive_read *a, const void **buff,
 	    !(rar5->skip_mode && rar5->file.entry_error == g_no_name_error)) {
 		/* The entry cannot be extracted; the archive can still be
 		 * read on. */
-		archive_set_error(&a->archive, ARCHIVE_RAR_ERRNO_UNSUPPORTED,
+		archive_set_error(&a->archive,
+		    rar5->file.entry_error == g_window_size_error ||
+		    rar5->file.entry_error == g_window_memory_error ?
+		    ARCHIVE_RAR_ERRNO_WINDOW : ARCHIVE_RAR_ERRNO_UNSUPPORTED,
 		    "%s", rar5->file.entry_error);
 		return ARCHIVE_FAILED;
 	}

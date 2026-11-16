@@ -1021,28 +1021,58 @@ class TC(testcase.TestCase):
                 output = self.scan(testfile, '--alert-incomplete-rar=yes')
                 assert 'Heuristics.Incomplete.RAR' not in output.out
 
-    def test_rar5_dictionary_beyond_what_is_allocated_is_reported(self):
-        self.step_name('Test a RAR5 solid stream that needs a window larger than 1 GB is reported incomplete and the entries after it are scanned')
-
-        # unRAR on a 64-bit system extracts it; this backend allocates 1 GB of
-        # window at most.
-
+    def window_beyond_1G_archive(self, name):
         archive = rar5_craft.Archive.join(
             (TC.path_rar / 'rar5-compressed-checked.rar').read_bytes(),
             (TC.path_rar / 'rar5-stored-checked.rar').read_bytes())
         archive.set_main_flags(4)
 
-        def declare_a_stream_of_1500_megabytes(header):
+        def declare_a_stream_of_600_megabytes_and_a_dictionary_of_4_gigabytes(header):
             header.set_compression(dictionary=15)
-            header.unpacked_size = 1500 << 20
+            header.unpacked_size = 600 << 20
 
-        archive.edit_file(0, declare_a_stream_of_1500_megabytes)
-        testfile = self.write_rar5('solid-window-beyond-1G.rar', archive)
+        archive.edit_file(0, declare_a_stream_of_600_megabytes_and_a_dictionary_of_4_gigabytes)
+        return self.write_rar5(name, archive)
 
-        limits = '--max-filesize=2000M --max-scansize=4000M'
-        self.assert_entry_found(testfile, STORED_ENTRY, limits)
-        output = self.scan(testfile, limits + ' --alert-incomplete-rar=yes')
-        assert 'Heuristics.Incomplete.RAR' in output.out
+    LIMITS_FOR_LARGE_WINDOWS = '--max-filesize=2000M --max-scansize=4000M'
+
+    def test_rar5_solid_stream_that_needs_a_window_larger_than_1_gigabyte_is_extracted(self):
+        self.step_name('Test a RAR5 entry that needs a window larger than 1 GB is extracted and the entries after it are scanned')
+
+        # The entry declares 600 MB, so its window is 2 GB; it holds a few
+        # kilobytes, so only those are written.
+        if shutil.disk_usage(TC.path_tmp).free < 4 << 30:
+            self.skipTest('The window of 2 GB is a file in the temporary directory')
+
+        testfile = self.window_beyond_1G_archive('solid-window-beyond-1G.rar')
+
+        self.assert_entry_found(testfile, COMPRESSED_ENTRY, self.LIMITS_FOR_LARGE_WINDOWS)
+        self.assert_entry_found(testfile, STORED_ENTRY, self.LIMITS_FOR_LARGE_WINDOWS)
+        output = self.scan(testfile, self.LIMITS_FOR_LARGE_WINDOWS + ' --debug')
+        assert 'not supported' not in output.out
+        assert 'Heuristics.Limits.Exceeded' not in output.out
+
+    def test_rar5_entry_whose_window_cannot_be_had_is_reported(self):
+        self.step_name('Test a RAR5 entry whose window cannot be allocated raises the limits and incomplete alerts only when they are enabled')
+
+        if not sys.platform.startswith('linux') or TC.valgrind != '':
+            self.skipTest('The address space is limited with ulimit -v on Linux, without valgrind')
+        if os.getenv('ASAN_OPTIONS') is not None or os.getenv('UBSAN_OPTIONS') is not None:
+            self.skipTest('A sanitizer reserves address space the limit does not leave')
+
+        testfile = self.window_beyond_1G_archive('solid-window-unavailable.rar')
+
+        path_db = TC.path_tmp / (STORED_ENTRY[1] + '.hsb')
+        path_db.write_text('{}:{}:RAR_ENTRY\n'.format(STORED_ENTRY[1], STORED_ENTRY[0]))
+        options = self.LIMITS_FOR_LARGE_WINDOWS + ' --alert-exceeds-max=yes --alert-incomplete-rar=yes --allmatch'
+        output = self.scan(testfile, options, path_db=path_db, memory_limit_kb=1000000)
+        assert output.ec == 1  # virus
+        self.verify_output(output.out, expected=[
+            '{}: Heuristics.Limits.Exceeded.RARSpace FOUND'.format(testfile.name),
+            '{}: Heuristics.Incomplete.RAR FOUND'.format(testfile.name)])
+
+        output = self.scan(testfile, self.LIMITS_FOR_LARGE_WINDOWS, path_db=path_db, memory_limit_kb=1000000)
+        assert 'Heuristics' not in output.out
 
     def solid_skip_archive(self, edit):
         archive = rar5_craft.Archive((TC.path_rar / 'rar5-solid-skip.rar').read_bytes())
