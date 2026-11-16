@@ -90,7 +90,7 @@ Default: disabled
 \fBTemporaryDirectory STRING\fR
 This option allows you to change the default temporary directory.
 .br
-The decompression window of a RAR5 archive larger than 64 MiB (a dictionary of 128 MiB or more, used by the data) is kept in an unnamed temporary file in this directory instead of anonymous memory, so under memory pressure the kernel writes it to disk and does not kill the process. The file has no name and mode 0600, and is released when the scan ends or the process dies. The directory needs free space for the window size (up to 1 GiB) times the number of concurrent scans of such archives. Where the directory cannot hold it, the window stays in memory. On Windows the window is always in memory. A directory on tmpfs keeps the window in memory.
+The decompression window of a RAR5 archive larger than 64 MiB (a dictionary of 128 MiB or more, used by the data) is kept in an unnamed temporary file in this directory instead of anonymous memory, so under memory pressure the kernel writes it to disk and does not kill the process. The file has no name and mode 0600, and is released when the scan ends or the process dies. The directory needs free space for the window size (up to 4 GiB) times the number of concurrent scans of such archives. Where the directory cannot hold it, the window stays in memory. On Windows the window is always in memory. A directory on tmpfs keeps the window in memory.
 .br
 Default: system specific (usually /tmp or /var/tmp).
 .TP

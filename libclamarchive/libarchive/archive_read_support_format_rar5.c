@@ -1712,13 +1712,9 @@ static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
 	const uint64_t keep = rar5_min(written, old_size);
 	uint8_t* window_buf = __archive_rar_window_alloc((size_t) window_size,
 	    rar5->window_dir);
-	uint8_t* filtered_buf = __archive_rar_window_alloc((size_t) window_size,
-	    rar5->window_dir);
 	uint64_t pos;
 
-	if(window_buf == NULL || filtered_buf == NULL) {
-		__archive_rar_window_free(window_buf, (size_t) window_size);
-		__archive_rar_window_free(filtered_buf, (size_t) window_size);
+	if(window_buf == NULL) {
 		return g_window_memory_error;
 	}
 
@@ -1732,8 +1728,6 @@ static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
 	free_filtered_buf(rar5);
 	rar5->cstate.window_buf = window_buf;
 	rar5->cstate.window_alloc = (size_t) window_size;
-	rar5->cstate.filtered_buf = filtered_buf;
-	rar5->cstate.filtered_alloc = (size_t) window_size;
 	return NULL;
 }
 
@@ -2636,19 +2630,13 @@ static int init_unpack(struct rar5 *rar5) {
 		const size_t window_size = (size_t) rar5->cstate.window_size;
 		uint8_t* window_buf = __archive_rar_window_alloc(window_size,
 		    rar5->window_dir);
-		uint8_t* filtered_buf = __archive_rar_window_alloc(window_size,
-		    rar5->window_dir);
 
-		if(window_buf == NULL || filtered_buf == NULL) {
-			__archive_rar_window_free(window_buf, window_size);
-			__archive_rar_window_free(filtered_buf, window_size);
+		if(window_buf == NULL) {
 			return ARCHIVE_FAILED;
 		}
 
 		rar5->cstate.window_buf = window_buf;
 		rar5->cstate.window_alloc = window_size;
-		rar5->cstate.filtered_buf = filtered_buf;
-		rar5->cstate.filtered_alloc = window_size;
 	}
 
 	clear_data_ready_stack(rar5);
