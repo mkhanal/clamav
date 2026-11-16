@@ -504,6 +504,11 @@ static cl_error_t cli_scanrar_file(const char *filepath, int desc, cli_ctx *ctx,
                     *incomplete = true;
                     unrar_ret   = UNRAR_OK;
                 }
+                if (unrar_ret == UNRAR_ESPACE) {
+                    /* The memory or temporary space the entry needs cannot be had: its content is not scanned. */
+                    cli_dbgmsg("RAR: No space for file: %s\n", metadata.filename);
+                    cli_append_potentially_unwanted_if_heur_exceedsmax(ctx, "Heuristics.Limits.Exceeded.RARSpace");
+                }
                 if (unrar_ret != UNRAR_OK) {
                     /*
                      * Some other error extracting the file
