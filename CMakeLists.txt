@@ -1126,6 +1126,11 @@ if(WIN32)
     # Include the license(s) in the installation
     install(FILES ${CMAKE_SOURCE_DIR}/COPYING.txt DESTINATION . COMPONENT libraries)
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/COPYING DESTINATION . COMPONENT libraries)
+else()
+    install(FILES
+        ${CMAKE_SOURCE_DIR}/COPYING/COPYING.libarchive
+        ${CMAKE_SOURCE_DIR}/COPYING/COPYING.rardecode
+        DESTINATION ${CMAKE_INSTALL_DOCDIR} COMPONENT libraries)
 endif()
 
 #
