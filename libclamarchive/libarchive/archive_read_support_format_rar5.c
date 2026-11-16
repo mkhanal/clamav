@@ -333,7 +333,7 @@ struct comp_state {
 	ssize_t last_block_length;   /* Used for sanity checking. */
 
 	/* Distance cache used during lzss uncompression. */
-	int dist_cache[4];
+	uint64_t dist_cache[4];
 
 	/* Data buffer stack. */
 	struct data_ready dready[2];
@@ -925,8 +925,8 @@ static int apply_filters(struct archive_read* a) {
 	return ARCHIVE_OK;
 }
 
-static void dist_cache_push(struct rar5 *rar5, int value) {
-	int* q = rar5->cstate.dist_cache;
+static void dist_cache_push(struct rar5 *rar5, uint64_t value) {
+	uint64_t* q = rar5->cstate.dist_cache;
 
 	q[3] = q[2];
 	q[2] = q[1];
@@ -934,9 +934,10 @@ static void dist_cache_push(struct rar5 *rar5, int value) {
 	q[0] = value;
 }
 
-static int dist_cache_touch(struct rar5 *rar5, int idx) {
-	int* q = rar5->cstate.dist_cache;
-	int i, dist = q[idx];
+static uint64_t dist_cache_touch(struct rar5 *rar5, int idx) {
+	uint64_t* q = rar5->cstate.dist_cache;
+	uint64_t dist = q[idx];
+	int i;
 
 	for(i = idx; i > 0; i--)
 		q[i] = q[i - 1];
@@ -1711,13 +1712,9 @@ static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
 	const uint64_t keep = rar5_min(written, old_size);
 	uint8_t* window_buf = __archive_rar_window_alloc((size_t) window_size,
 	    rar5->window_dir);
-	uint8_t* filtered_buf = __archive_rar_window_alloc((size_t) window_size,
-	    rar5->window_dir);
 	uint64_t pos;
 
-	if(window_buf == NULL || filtered_buf == NULL) {
-		__archive_rar_window_free(window_buf, (size_t) window_size);
-		__archive_rar_window_free(filtered_buf, (size_t) window_size);
+	if(window_buf == NULL) {
 		return g_window_memory_error;
 	}
 
@@ -1731,8 +1728,6 @@ static const char* grow_window(struct rar5 *rar5, uint64_t window_size)
 	free_filtered_buf(rar5);
 	rar5->cstate.window_buf = window_buf;
 	rar5->cstate.window_alloc = (size_t) window_size;
-	rar5->cstate.filtered_buf = filtered_buf;
-	rar5->cstate.filtered_alloc = (size_t) window_size;
 	return NULL;
 }
 
@@ -2635,19 +2630,13 @@ static int init_unpack(struct rar5 *rar5) {
 		const size_t window_size = (size_t) rar5->cstate.window_size;
 		uint8_t* window_buf = __archive_rar_window_alloc(window_size,
 		    rar5->window_dir);
-		uint8_t* filtered_buf = __archive_rar_window_alloc(window_size,
-		    rar5->window_dir);
 
-		if(window_buf == NULL || filtered_buf == NULL) {
-			__archive_rar_window_free(window_buf, window_size);
-			__archive_rar_window_free(filtered_buf, window_size);
+		if(window_buf == NULL) {
 			return ARCHIVE_FAILED;
 		}
 
 		rar5->cstate.window_buf = window_buf;
 		rar5->cstate.window_alloc = window_size;
-		rar5->cstate.filtered_buf = filtered_buf;
-		rar5->cstate.filtered_alloc = window_size;
 	}
 
 	clear_data_ready_stack(rar5);
@@ -3184,7 +3173,7 @@ static int decode_code_length(struct archive_read* a, struct rar5 *rar5,
 	return length;
 }
 
-static int copy_string(struct archive_read* a, int len, int dist) {
+static int copy_string(struct archive_read* a, int len, uint64_t dist) {
 	struct rar5 *rar5 = a->format->data;
 	const ssize_t cmask = rar5->cstate.window_mask;
 	const uint64_t write_ptr = rar5->cstate.write_ptr +
@@ -3222,8 +3211,8 @@ static int copy_string(struct archive_read* a, int len, int dist) {
 		/* The window is smaller than the dictionary: what lies
 		 * beyond it is what unRAR's larger window holds before the
 		 * entry starts, which is zeros. */
-		if(dist > rar5->cstate.window_size &&
-		    (uint64_t)dist <= rar5->cstate.dict_size)
+		if(dist > (uint64_t)rar5->cstate.window_size &&
+		    dist <= rar5->cstate.dict_size)
 			rar5->cstate.window_buf[write_idx] = 0;
 		else
 			rar5->cstate.window_buf[write_idx] =
@@ -3310,8 +3299,8 @@ static int do_uncompress_block(struct archive_read* a, const uint8_t* p) {
 		} else if(num >= 262) {
 			uint16_t dist_slot;
 			int len = decode_code_length(a, rar5, p, num - 262),
-				dbits,
-				dist = 1;
+				dbits;
+			uint64_t dist = 1;
 
 			if(len == -1) {
 				archive_set_error(&a->archive,
@@ -3339,8 +3328,7 @@ static int do_uncompress_block(struct archive_read* a, const uint8_t* p) {
 
 				/* Cast to uint32_t will make sure the shift
 				 * left operation won't produce undefined
-				 * result. Then, the uint32_t type will
-				 * be implicitly casted to int. */
+				 * result. */
 				dist += (uint32_t) (2 |
 				    (dist_slot & 1)) << dbits;
 			}
@@ -3376,7 +3364,7 @@ static int do_uncompress_block(struct archive_read* a, const uint8_t* p) {
 						return rar5->main.solid ? ARCHIVE_FATAL : ARCHIVE_FAILED;
 					}
 
-					if(dist >= INT_MAX - low_dist - 1) {
+					if(dist >= UINT32_MAX - low_dist - 1) {
 						/* This only happens in
 						 * invalid archives. */
 						archive_set_error(&a->archive,
@@ -3442,7 +3430,7 @@ static int do_uncompress_block(struct archive_read* a, const uint8_t* p) {
 		} else {
 			/* num < 262 */
 			const int idx = num - 258;
-			const int dist = dist_cache_touch(rar5, idx);
+			const uint64_t dist = dist_cache_touch(rar5, idx);
 
 			uint16_t len_slot;
 			int len;

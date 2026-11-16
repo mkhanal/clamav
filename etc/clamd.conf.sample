@@ -756,8 +756,9 @@ Example
 #PCREMaxFileSize 400M
 
 # When AlertExceedsMax is set, files exceeding the MaxFileSize, MaxScanSize, or
-# MaxRecursion limit will be flagged with the virus name starting with
-# "Heuristics.Limits.Exceeded".
+# MaxRecursion limit, and a RAR archive entry that cannot be extracted for lack
+# of memory or disk space, will be flagged with the virus name starting with
+# "Heuristics.Limits.Exceeded" (the latter as "Heuristics.Limits.Exceeded.RARSpace").
 # Default: no
 #AlertExceedsMax yes
 

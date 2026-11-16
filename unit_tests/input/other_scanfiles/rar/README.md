@@ -36,6 +36,12 @@ recorded.
 |---|---|
 | `rar5-unknown-size-600m.rar` | one RAR5 entry of 629145600 zero bytes in 26 KB (`rar a -ma5 -m3`, rar 7.23) with the unknown unpacked size flag (0x08 of the file flags) set and the header checksum recomputed: nothing but its data ends the entry |
 
+## Written for a test
+
+| Fixture | Covers |
+|---|---|
+| `rar5-match-2gib-back.rar` | a solid RAR5 stream of `big.bin`, more than 2 GiB of zeros between two copies of a 52-byte marker in 64 KB, then `tail.bin`, whose 52 bytes are a match at a distance of 2 GiB + 1 MiB: the marker. RAR 7.23 tests it OK. No RARLAB code is in it; the data was written by a purpose-built encoder that is not part of this repository |
+
 ## Taken from libarchive
 
 | Fixture | Covers |

@@ -1052,6 +1052,18 @@ class TC(testcase.TestCase):
         assert 'not supported' not in output.out
         assert 'Heuristics.Limits.Exceeded' not in output.out
 
+    def test_rar5_match_more_than_2_gigabytes_back_is_decoded(self):
+        self.step_name('Test a RAR5 match at a distance above 2 GB copies the bytes from there')
+
+        # The window of the stream is 4 GB, a file in the temporary directory.
+        if shutil.disk_usage(TC.path_tmp).free < 6 << 30:
+            self.skipTest('The window of 4 GB is a file in the temporary directory')
+
+        testfile = TC.path_rar / 'rar5-match-2gib-back.rar'
+        marker = (52, '0fe42d6760a8bac7127419eb837b8668481794c6f15243239441f49e4e9ee066')
+
+        self.assert_entry_found(testfile, marker, self.LIMITS_FOR_LARGE_WINDOWS)
+
     def test_rar5_entry_whose_window_cannot_be_had_is_reported(self):
         self.step_name('Test a RAR5 entry whose window cannot be allocated raises the limits and incomplete alerts only when they are enabled')
 
@@ -1256,6 +1268,25 @@ class TC(testcase.TestCase):
         assert process.returncode in (0, 1), 'returncode {}: {}'.format(process.returncode, out)
         assert re.search(r'RAR window: \d+ bytes in anonymous memory', out), out
         assert 'in an unnamed file' not in out, out
+
+    def test_entry_that_exceeds_the_file_size_limit_raises_the_space_alert(self):
+        self.step_name('Test an entry that cannot be written for the size limit of the process raises the space alert like a full disk')
+
+        self.skip_unless_linux_libarchive()
+        import resource
+
+        def limit_files_to_1000_bytes():
+            signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+            resource.setrlimit(resource.RLIMIT_FSIZE, (1000, 1000))
+
+        tempdir = TC.path_tmp / 'file-size-limit-tmp'
+        tempdir.mkdir()
+        command = [str(TC.clamscan), '--alert-exceeds-max=yes', '--tempdir={}'.format(tempdir),
+                   '-d', str(TC.path_marker_start_db), str(TC.path_rar / 'rar5-stored-checked.rar')]
+        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                 preexec_fn=limit_files_to_1000_bytes, timeout=300)
+
+        assert 'Heuristics.Limits.Exceeded.RARSpace FOUND' in process.stdout, process.stdout
 
     def test_window_file_is_close_on_exec_from_creation(self):
         self.step_name('Test the descriptor of a window file is created close-on-exec')
