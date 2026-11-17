@@ -1,6 +1,8 @@
 # ClamCove 1.5.4.2 compared with ClamAV 1.5.4
 
 What differs functionally between ClamCove 1.5.4.2 (tag `clamcove-1.5.4.2`) and ClamAV 1.5.4, for someone choosing between them. ClamCove is ClamAV 1.5.4 plus the changes listed here; the signature databases, configuration files, commands, library names and install paths are the same. Every number below was measured on 2026-11-16 on one machine (arm64 only; nothing was measured on x86-64) and can be reproduced with the commands in [How to reproduce](#how-to-reproduce).
+The scan size rows under Differences (a solid 7z folder; gzip, bzip2, xz and xar output) are changes of ClamCove 1.5.4.3 and were not part of the measurements, which were made on 1.5.4.2.
+
 
 ## In short
 
@@ -86,6 +88,8 @@ One line each; the detail is in the linked issues and pull requests.
 | Area | ClamAV 1.5.4 | ClamCove 1.5.4.2 | Detail |
 | --- | --- | --- | --- |
 | PCRE subsignatures of a logical signature with a `Container` constraint | Evaluated whatever the container | Skipped when the layer being scanned is not that container; verdicts unchanged | [Cisco-Talos/clamav#1886](https://github.com/Cisco-Talos/clamav/pull/1886) |
+| A solid 7z folder | Decoded whole into memory before `MaxScanSize` is checked against it, so a small 7z can hold gigabytes until `MaxScanTime` ends the scan | Checked against the scan size still available before it is decoded; a file in a folder that is too large is skipped and raises `Heuristics.Limits.Exceeded.MaxScanSize` under `AlertExceedsMax` | [#54](https://github.com/mkhanal/clamcove/pull/54), [Cisco-Talos/clamav#1932](https://github.com/Cisco-Talos/clamav/pull/1932) |
+| gzip, bzip2, xz and xar output against `MaxScanSize` | A chunk is written to the temporary file before the total is checked, so the chunk that crosses the limit stays in the file, is not counted, and each further compressed entry in the archive writes the remaining scan size again | The total with the chunk added is checked before the chunk is written; the data up to the limit is written, counted and scanned | [#56](https://github.com/mkhanal/clamcove/pull/56), [Cisco-Talos/clamav#1933](https://github.com/Cisco-Talos/clamav/pull/1933) |
 | RAR reader | RARLAB unRAR code in `libclamunrar/`, under the unRAR licence | libarchive 3.8.11 (BSD-2-Clause), vendored as `libclamarchive/`, behind the same `libclamunrar_iface` interface; no RARLAB code in source, patches, tarball or image | [#1](https://github.com/mkhanal/clamcove/issues/1), [#7](https://github.com/mkhanal/clamcove/pull/7), [#34](https://github.com/mkhanal/clamcove/issues/34) |
 | RAR 3.x (unpack version 29) and RAR5: solid, SFX stub, filters, volumes, encryption detection | Extracted | Extracted, compared on 226 archives (parity below) | [#6](https://github.com/mkhanal/clamcove/pull/6) |
 | RAR 2.0 and 2.6 | Extracted | Extracted by a decoder ported from [rardecode](https://github.com/nwaples/rardecode) (BSD-2-Clause) | [#16](https://github.com/mkhanal/clamcove/pull/16) |
@@ -137,6 +141,8 @@ Each item is a place where ClamCove can scan less than ClamAV, or needs somethin
 | Change | Upstream | Status |
 | --- | --- | --- |
 | PCRE container check | [Cisco-Talos/clamav#1886](https://github.com/Cisco-Talos/clamav/pull/1886) (with the report [#1885](https://github.com/Cisco-Talos/clamav/issues/1885)) | Open |
+| A solid 7z folder checked against `MaxScanSize` | [Cisco-Talos/clamav#1932](https://github.com/Cisco-Talos/clamav/pull/1932) | Open |
+| gzip, bzip2, xz and xar output checked against `MaxScanSize` | [Cisco-Talos/clamav#1933](https://github.com/Cisco-Talos/clamav/pull/1933) | Open |
 | Fuzz target for the unRAR interface (also drives the libarchive backend) | [Cisco-Talos/clamav#1929](https://github.com/Cisco-Talos/clamav/pull/1929) | Open |
 | RAR through libarchive and everything RAR-specific above | None ([#14](https://github.com/mkhanal/clamcove/issues/14)) | Not offered |
 | Name, version suffix, release patches, CI | None | ClamCove only, never offered |
