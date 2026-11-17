@@ -9,7 +9,7 @@
 03	pcre-container-check	patch	Container constraint of a logical signature checked before its PCRE subsignatures run	^libclamav: Skip PCRE|^unit_tests: Credit the PCRE container test
 04	incomplete-rar-alert	patch	Opt-in alert for RAR archives that could not be fully extracted and scanned	[Ii]ncomplete[- ]RAR|^libclamav: Add an opt-in alert for a RAR archive|^docs: Describe the RAR space alert
 99	ci-and-tests	none	CI workflows and release inputs under .github	^ci: 
-05	clamcove-naming	patch	ClamCove version string and NOTICE	ClamCove|^(version|notice|readme): |^Version as |^unit_tests: Pass CLAMCOVE_VERSION|^(docs: List every difference|tools/differences: )
+05	clamcove-naming	patch	ClamCove version string and NOTICE	ClamCove|^(version|notice|readme): |^Version as |^unit_tests: Pass CLAMCOVE_VERSION|^(docs: (List every difference|Name the upstream pull request)|tools/differences: )
 06	windows-build-fixes	patch	Windows with vcpkg: OpenSSL library directory taken from the release file of a per-configuration list	^(libclamav_rust: Take OpenSSL|Windows: )
 08	sevenzip-folder-scan-size	patch	A solid 7z folder is counted against MaxScanSize before it is decoded into memory	^libclamav: Check the scan size before decoding a 7z folder
 09	decompressor-scan-size	patch	gzip, bzip2, xz and xar output is checked against MaxScanSize before it is written	^libclamav: Check the scan size before writing (decompressed|gzip)
