@@ -16,8 +16,8 @@ open source antivirus engine. It enhances ClamAV for two reasons:
 
 ClamCove is versioned on ClamAV's version:
 `<clamav major>.<minor>.<patch>.<clamcove release>`, the OpenResty convention,
-so ClamCove 1.5.4.3 is ClamAV 1.5.4 plus ClamCove release 3. Container images
-are tagged with the exact version (`ghcr.io/mkhanal/clamcove:1.5.4.3`) and with
+so ClamCove 1.5.4.4 is ClamAV 1.5.4 plus ClamCove release 4. Container images
+are tagged with the exact version (`ghcr.io/mkhanal/clamcove:1.5.4.4`) and with
 the floating tags `1.5.4`, `1.5`, `1` and `latest`, each moved to the newest
 ClamCove release on that line.
 
