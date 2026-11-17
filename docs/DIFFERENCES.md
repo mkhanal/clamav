@@ -54,6 +54,19 @@ The files are made by `tools/differences/make-corpus.py` and `make-rar.sh`: a do
 
 The zip-based gain is the PCRE change: 400 mail-only signatures of `main.cvd` and 368 zip-only ones of `daily.cvd` no longer run their regular expressions over every zip-based file ([Cisco-Talos/clamav#1886](https://github.com/Cisco-Talos/clamav/pull/1886) has the analysis and its own timings, 4.5 s to 0.57 s for a 9.4 MB docx). The gain grows with file size and nesting and is absent for a file that is not a zip, such as the PDF. A zip inside an email (`.eml`) gets none, by design: there the mail-only signatures apply.
 
+### Many small objects
+
+The cost of fetching a digest per hash is per scanned object, so it shows on archives of many small members. Same machine and build as above, Apple M2 Max and the Docker Linux VM, ClamCove 1.5.4.3 before and with [Cisco-Talos/clamav#1774](https://github.com/Cisco-Talos/clamav/pull/1774) backported ([#59](https://github.com/mkhanal/clamcove/pull/59)), median of 5 to 7 alternating runs, `MaxFiles` 100000; verdicts identical on all 24 samples. `clamscan` with a one-signature database isolates the per-object cost, `clamd` has the official databases loaded.
+
+| file | mode | before | after | ratio |
+|---|---|---|---|---|
+| zip of 10,000 small files | `clamscan`, one signature | 5.33 s | 0.29 s | 18.2x |
+| zip nested three deep, 500 members per level | `clamscan`, one signature | 1.07 s | 0.07 s | 15.3x |
+| zip of 10,000 small files | `clamd`, official databases | 56.1 s | 38.9 s | 1.44x |
+| zip nested three deep, 500 members per level | `clamd`, official databases | 10.5 s | 7.27 s | 1.45x |
+| xlsx with 400 sheets | `clamd`, official databases | 3.38 s | 2.65 s | 1.27x |
+| docx, plain zip, nested zip and PDF of 9 MB | `clamd`, official databases | 0.30 to 1.20 s | 0.30 to 1.15 s | 1.00 to 1.11x |
+
 ### Large RAR5 window under a memory limit
 
 An RAR5 archive of 800 MiB of zeros with a 1 GiB dictionary (34 KB, solid, `rar` 7.23, `-ma5 -s -m3 -md1g`), `MaxFileSize`, `MaxScanSize` and `StreamMaxLength` 4000M, `MaxScanTime` 0, a signature database of one marker, in a container with `--memory` and the same `--memory-swap`. `clamd` rows: `clamdscan` of the same file N times at once. Peak anonymous memory is of the whole `clamd`; the page cache (the window file) is reclaimable and not counted, which is why `memory.peak` reads the limit.
@@ -75,6 +88,7 @@ A service that embeds `clamd` under a 2816 MiB container limit, with the same ki
 ### What to expect
 
 - Gain: zip-based uploads (Office files, zips) with the official databases, in proportion to size; a service holding a `clamd` thread per upload frees it sooner.
+- Gain: archives of many small objects (a zip of thousands of files, a large xlsx), in proportion to the number of objects; a few large files gain nothing.
 - Gain: large RAR5 windows stop being a way to kill `clamd` under a memory limit.
 - Gain: RAR4 and RAR5 of ordinary size scan 8 to 14 % faster; a volume-spanning RAR5 block is scanned.
 - Loss: an entry that needs a window above 64 MiB is slower, as above. Windows of 64 MiB and below are anonymous memory as in ClamAV and cost the same.
@@ -90,6 +104,7 @@ One line each; the detail is in the linked issues and pull requests.
 | PCRE subsignatures of a logical signature with a `Container` constraint | Evaluated whatever the container | Skipped when the layer being scanned is not that container; verdicts unchanged | [Cisco-Talos/clamav#1886](https://github.com/Cisco-Talos/clamav/pull/1886) |
 | A solid 7z folder | Decoded whole into memory before `MaxScanSize` is checked against it, so a small 7z can hold gigabytes until `MaxScanTime` ends the scan | Checked against the scan size still available before it is decoded; a file in a folder that is too large is skipped and raises `Heuristics.Limits.Exceeded.MaxScanSize` under `AlertExceedsMax` | [#54](https://github.com/mkhanal/clamcove/pull/54), [Cisco-Talos/clamav#1932](https://github.com/Cisco-Talos/clamav/pull/1932) |
 | gzip, bzip2, xz and xar output against `MaxScanSize` | A chunk is written to the temporary file before the total is checked, so the chunk that crosses the limit stays in the file, is not counted, and each further compressed entry in the archive writes the remaining scan size again | The total with the chunk added is checked before the chunk is written; the data up to the limit is written, counted and scanned | [#56](https://github.com/mkhanal/clamcove/pull/56), [Cisco-Talos/clamav#1933](https://github.com/Cisco-Talos/clamav/pull/1933) |
+| OpenSSL 3 digest handles | Every MD5, SHA-1 and SHA-256 hash creates a library context and fetches its digest again, which costs hundreds of microseconds per scanned object and leaks a context per hash where a FIPS policy withholds MD5 | Each digest is fetched once into a shared context and reused; hash values and the FIPS bypass are unchanged | [#59](https://github.com/mkhanal/clamcove/pull/59), [Cisco-Talos/clamav#1774](https://github.com/Cisco-Talos/clamav/pull/1774) |
 | RAR reader | RARLAB unRAR code in `libclamunrar/`, under the unRAR licence | libarchive 3.8.11 (BSD-2-Clause), vendored as `libclamarchive/`, behind the same `libclamunrar_iface` interface; no RARLAB code in source, patches, tarball or image | [#1](https://github.com/mkhanal/clamcove/issues/1), [#7](https://github.com/mkhanal/clamcove/pull/7), [#34](https://github.com/mkhanal/clamcove/issues/34) |
 | RAR 3.x (unpack version 29) and RAR5: solid, SFX stub, filters, volumes, encryption detection | Extracted | Extracted, compared on 226 archives (parity below) | [#6](https://github.com/mkhanal/clamcove/pull/6) |
 | RAR 2.0 and 2.6 | Extracted | Extracted by a decoder ported from [rardecode](https://github.com/nwaples/rardecode) (BSD-2-Clause) | [#16](https://github.com/mkhanal/clamcove/pull/16) |
@@ -143,6 +158,7 @@ Each item is a place where ClamCove can scan less than ClamAV, or needs somethin
 | PCRE container check | [Cisco-Talos/clamav#1886](https://github.com/Cisco-Talos/clamav/pull/1886) (with the report [#1885](https://github.com/Cisco-Talos/clamav/issues/1885)) | Open |
 | A solid 7z folder checked against `MaxScanSize` | [Cisco-Talos/clamav#1932](https://github.com/Cisco-Talos/clamav/pull/1932) | Open |
 | gzip, bzip2, xz and xar output checked against `MaxScanSize` | [Cisco-Talos/clamav#1933](https://github.com/Cisco-Talos/clamav/pull/1933) | Open |
+| OpenSSL 3 digest handles cached | [Cisco-Talos/clamav#1774](https://github.com/Cisco-Talos/clamav/pull/1774) | Merged upstream in Cisco-Talos/clamav#1774 (ClamAV main, after 1.5.4), backported |
 | Fuzz target for the unRAR interface (also drives the libarchive backend) | [Cisco-Talos/clamav#1929](https://github.com/Cisco-Talos/clamav/pull/1929) | Open |
 | RAR through libarchive and everything RAR-specific above | None ([#14](https://github.com/mkhanal/clamcove/issues/14)) | Not offered |
 | Name, version suffix, release patches, CI | None | ClamCove only, never offered |

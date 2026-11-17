@@ -13,4 +13,5 @@
 06	windows-build-fixes	patch	Windows with vcpkg: OpenSSL library directory taken from the release file of a per-configuration list	^(libclamav_rust: Take OpenSSL|Windows: )
 08	sevenzip-folder-scan-size	patch	A solid 7z folder is counted against MaxScanSize before it is decoded into memory	^libclamav: Check the scan size before decoding a 7z folder
 09	decompressor-scan-size	patch	gzip, bzip2, xz and xar output is checked against MaxScanSize before it is written	^libclamav: Check the scan size before writing (decompressed|gzip)
+10	evp-md-cache	patch	EVP digest handles fetched once and cached instead of fetched per hash, fixing a FIPS provider memory leak	^libclamav: (cache EVP_MD handles|harden EVP digest cache)|^unit_tests: (cover digest caching|Remove the message callback)
 98	tests-and-docs	paths	Tests, test inputs, fuzz targets, RAR parity tooling, README and differences document of all the changes above, in one patch	unit_tests tools fuzz README.md CONTRIBUTING.md docs/DIFFERENCES.md
