@@ -1,0 +1,22 @@
+[package]
+name = "clamcove-equivalence-samples"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "GPL-2.0-only"
+publish = false
+
+[workspace]
+
+[dependencies]
+base64 = { version = "=0.23.1", default-features = false, features = ["alloc"] }
+bzip2 = "=0.6.1"
+cfb = "=0.15.0"
+flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"] }
+lopdf = { version = "=0.46.0", default-features = false }
+lzma-rust2 = { version = "=0.23.0", default-features = false, features = ["std", "xz", "encoder"] }
+ruzstd = { version = "=0.9.1", default-features = false, features = ["std"] }
+sevenz-rust2 = { version = "=0.24.2", default-features = false, features = ["compress"] }
+tar = { version = "=0.4.46", default-features = false }
+uuid = { version = "=1.29.0", default-features = false }
+zip = { version = "=9.2.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
