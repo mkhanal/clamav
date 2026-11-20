@@ -63,7 +63,7 @@ jobs:
         uses: lukka/run-cmake@v10
         id: runcmake_cmd
         with:
-          cmakeListsTxtPath: "${{runner.workspace}}/clamav/CMakeLists.txt"
+          cmakeListsTxtPath: "${{ github.workspace }}/CMakeLists.txt"
           configurePreset: "clamav-windows-ninja-multi"
           buildPreset: "windows-release"
           testPreset: "windows-release"
@@ -100,7 +100,7 @@ jobs:
         # and build directories, but this is only available with CMake 3.13 and higher.
         # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
         run:
-          cmake ${{runner.workspace}}/clamav -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          cmake ${{ github.workspace }} -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
           -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@4)"
           -DENABLE_STATIC_LIB=ON
           -DENABLE_EXAMPLES=ON
@@ -152,7 +152,7 @@ jobs:
         # and build directories, but this is only available with CMake 3.13 and higher.
         # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
         run:
-          cmake ${{runner.workspace}}/clamav -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          cmake ${{ github.workspace }} -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
           -DENABLE_STATIC_LIB=ON
           -DENABLE_EXAMPLES=ON
 
