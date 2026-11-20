@@ -89,6 +89,7 @@ Foreground yes
 TCPSocket $port
 TCPAddr 127.0.0.1
 DatabaseDirectory $WORK/db
+CVDCertsDirectory $WORK/root-$variant/etc/clamav/certs
 TemporaryDirectory $WORK/tmp-$variant
 DisableCache yes
 MaxThreads 2

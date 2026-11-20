@@ -19,9 +19,10 @@ ci/equivalence/run.sh --report ci/equivalence/report.md ci/equivalence/samples
 with identical CMake options, runs ClamAV's `ctest` suite on both, then starts one `clamd` per build
 with the same `main`, `daily` and `bytecode` databases plus the three test signatures in `signatures/`.
 The databases come from the pinned `clamav/clamav-debian:1.5.4` image, so the report does not depend on
-the live database CDN. It scans each generated sample five times, alternating builds, and once more per
-build with `--allmatch`. Caching and all scan-size limits are disabled so the comparison measures the
-regex work rather than a truncated scan.
+the live database CDN. Each `clamd` reads its own build's installed CVD certs, so the signed databases
+verify without a system-wide ClamAV install. It scans each generated sample five times, alternating
+builds, and once more per build with `--allmatch`. Caching and all scan-size limits are disabled so the
+comparison measures the regex work rather than a truncated scan.
 
 The check fails when:
 
