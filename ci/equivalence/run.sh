@@ -21,6 +21,7 @@ done
 
 OFFICIAL_VERSION=1.5.4
 OFFICIAL_SHA=1af1117a228f1b5bc7fa91a0dabc37848a99e7d25188e9be8043332ce721dfd3
+SIGNATURE_IMAGE='clamav/clamav-debian:1.5.4@sha256:cce3e1a43ae2bb40e11335c52c0e1e98273b12fa3d587e617f63a6907cc4b70b'
 REQUIRED_SPEEDUP=3
 ALLOWED_SLOWDOWN_PERCENT=15
 TIMER_JITTER_MS=10
@@ -30,10 +31,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(git -C "$HERE" rev-parse --show-toplevel)"
 WORK="$(mktemp -d)"
 PIDS=()
+DATABASE_CONTAINER=
 cleanup() {
   for pid in "${PIDS[@]-}"; do
     kill "$pid" > /dev/null 2>&1 || true
   done
+  if [ -n "$DATABASE_CONTAINER" ]; then
+    docker rm -f "$DATABASE_CONTAINER" > /dev/null 2>&1 || true
+  fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -66,11 +71,13 @@ build_variant official "$WORK/source"
 build_variant clamcove "$REPO"
 
 mkdir -p "$WORK/db"
+echo "== Loading databases from $SIGNATURE_IMAGE"
+DATABASE_CONTAINER="$(docker create "$SIGNATURE_IMAGE")"
 for database in main daily bytecode; do
-  echo "== Fetching $database.cvd"
-  curl --fail --location --silent --show-error --retry 3 \
-    --output "$WORK/db/$database.cvd" "https://database.clamav.net/$database.cvd"
+  docker cp "$DATABASE_CONTAINER:/var/lib/clamav/$database.cvd" "$WORK/db/$database.cvd"
 done
+docker rm "$DATABASE_CONTAINER" > /dev/null
+DATABASE_CONTAINER=
 cp "$HERE"/signatures/* "$WORK/db/"
 
 for variant in official clamcove; do
