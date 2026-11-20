@@ -2,17 +2,19 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: run.sh [--runs N] [--report FILE] <sample-directory>..." >&2
+  echo "usage: run.sh [--runs N] [--report FILE] [--clamcove-ref REF] <sample-directory>..." >&2
   exit 2
 }
 
 RUNS=5
 REPORT=equivalence-report.md
+CLAMCOVE_REF=clamcove-1.5.4.4
 DIRECTORIES=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --runs) RUNS="${2:?}"; shift 2 ;;
     --report) REPORT="${2:?}"; shift 2 ;;
+    --clamcove-ref) CLAMCOVE_REF="${2:?}"; shift 2 ;;
     -*) usage ;;
     *) DIRECTORIES+=("$(cd "$1" && pwd)"); shift ;;
   esac
@@ -67,8 +69,13 @@ build_variant() {
   ctest --test-dir "$WORK/build-$variant" --output-on-failure
 }
 
+echo "== Checking out ClamCove $CLAMCOVE_REF"
+CLAMCOVE_COMMIT="$(git -C "$REPO" rev-parse "$CLAMCOVE_REF^{commit}")"
+mkdir -p "$WORK/clamcove-source"
+git -C "$REPO" archive "$CLAMCOVE_COMMIT" | tar -x -C "$WORK/clamcove-source"
+
 build_variant official "$WORK/source"
-build_variant clamcove "$REPO"
+build_variant clamcove "$WORK/clamcove-source"
 
 mkdir -p "$WORK/db"
 echo "== Loading databases from $SIGNATURE_IMAGE"
@@ -159,7 +166,7 @@ done
   echo '# ClamCove equivalence report'
   echo
   echo "- ClamAV baseline: $OFFICIAL_VERSION (tarball SHA-256 \`$OFFICIAL_SHA\`)"
-  echo "- ClamCove commit: \`$(git -C "$REPO" rev-parse HEAD)\`"
+  echo "- ClamCove source: \`$CLAMCOVE_REF\` (\`$CLAMCOVE_COMMIT\`)"
   echo "- Databases: $(cd "$WORK/db" && ls -1 | paste -sd, -)"
   echo "- Runs per sample: $RUNS, interleaved, plus one \`--allmatch\` scan each"
   echo
@@ -168,7 +175,7 @@ done
 awk -F '\t' -v runs="$RUNS" -v speedup_list="${SPEEDUP_SAMPLES[*]-}" -v required="$REQUIRED_SPEEDUP" \
     -v slowdown="$ALLOWED_SLOWDOWN_PERCENT" -v jitter="$TIMER_JITTER_MS" '
   BEGIN { count = split(speedup_list, listed, " "); for (i = 1; i <= count; i++) gated[listed[i]] = 1 }
-  $3 == "allmatch" { every[$1, $2] = $4; next }
+  $3 == "allmatch" { every[$1, $2] = $5; next }
   {
     variant = $1; key = $2
     files[key] = 1

@@ -3,7 +3,7 @@ name: equivalence
 on:
   pull_request:
   push:
-    branches: [main, 'rel/*', 'dev/*']
+    branches: [main, 'rel/*', 'release/*', 'dev/*']
   release:
     types: [published, prereleased]
   workflow_dispatch:
@@ -37,8 +37,21 @@ jobs:
       - name: Generate samples
         run: cargo run --locked --manifest-path ci/equivalence/generator/Cargo.toml -- ci/equivalence/samples
 
+      - name: Select ClamCove source
+        id: source
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ -n "$TAG" ]; then
+            echo "ref=$TAG" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
+            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=clamcove-1.5.4.4" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Compare detection and timing
-        run: ci/equivalence/run.sh --report ci/equivalence/report.md ci/equivalence/samples
+        run: ci/equivalence/run.sh --clamcove-ref "${{ steps.source.outputs.ref }}" --report ci/equivalence/report.md ci/equivalence/samples
 
       - name: Record release checksum
         if: github.event_name == 'release'

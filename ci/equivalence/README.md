@@ -2,10 +2,10 @@
 
 This check owns the evidence that ClamCove detects exactly what the official ClamAV release of the
 same version detects, and that its regex changes keep the documented speedups. It runs in
-`.github/workflows/equivalence.yml` on pull requests, pushes to `main`/`rel/*`/`dev/*`, and on each
-published or prereleased release. The release job attaches `equivalence-report.md` and
-`release-checksum.txt` to that release. The report names the checked-out commit and the tarball SHA-256;
-consumers copy that published value into their own build pins.
+`.github/workflows/equivalence.yml` on pull requests, pushes to `main`/`rel/*`/`release/*`/`dev/*`,
+and on each published or prereleased release. The release job attaches `equivalence-report.md` and
+`release-checksum.txt` to that release. The report names the ClamCove ref whose source was built and
+the tarball SHA-256; consumers copy that published value into their own build pins.
 
 Run it locally on a Debian/Ubuntu machine with the same packages the workflow installs:
 
@@ -15,14 +15,20 @@ cargo run --locked --manifest-path ci/equivalence/generator/Cargo.toml -- ci/equ
 ci/equivalence/run.sh --report ci/equivalence/report.md ci/equivalence/samples
 ```
 
-`run.sh` checks the pinned official tarball's SHA-256, builds the official release and this checkout
-with identical CMake options, runs ClamAV's `ctest` suite on both, then starts one `clamd` per build
-with the same `main`, `daily` and `bytecode` databases plus the three test signatures in `signatures/`.
+`run.sh` checks the pinned official tarball's SHA-256, builds the official release and the ClamCove
+ref named by `--clamcove-ref` with identical CMake options, runs ClamAV's `ctest` suite on both, then
+starts one `clamd` per build with the same `main`, `daily` and `bytecode` databases plus the three test
+signatures in `signatures/`.
 The databases come from the pinned `clamav/clamav-debian:1.5.4` image, so the report does not depend on
 the live database CDN. Each `clamd` reads its own build's installed CVD certs, so the signed databases
 verify without a system-wide ClamAV install. It scans each generated sample five times, alternating
 builds, and once more per build with `--allmatch`. Caching and all scan-size limits are disabled so the
 comparison measures the regex work rather than a truncated scan.
+
+The workflow builds the released tag on release events and the branch tip on `release/*` pushes. Other
+events build `clamcove-1.5.4.4`, the shipped source consumers pin: `main` tracks upstream ClamAV and
+does not carry ClamCove's performance patches, so building it would measure a different product. Pass
+`--clamcove-ref` explicitly when running locally against another ref.
 
 The check fails when:
 
