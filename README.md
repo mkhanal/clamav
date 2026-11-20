@@ -15,6 +15,13 @@
   <a href="https://twitter.com/clamav"><img src="https://abs.twimg.com/favicons/twitter.ico" width="18" height="18"></a>
 </p>
 
+## ClamCove equivalence check
+
+ClamCove's detection and speed evidence against the official ClamAV release of the same version is
+produced by the [equivalence workflow](.github/workflows/equivalence.yml). It runs on pull requests,
+release branches and every published release; the report is attached to the release. See
+[ci/equivalence/README.md](ci/equivalence/README.md) for the gates and how to run it locally.
+
 ## Documentation & FAQ
 
 ClamAV documentation is hosted at [docs.clamav.net](https://docs.clamav.net/).

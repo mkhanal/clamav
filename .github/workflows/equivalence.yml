@@ -1,0 +1,70 @@
+name: equivalence
+
+# The engine's detection and speed evidence lives with the engine. The File
+# Screener image records the release whose check produced this report in its
+# org.metariki.clamcove.equivalence-check label.
+on:
+  pull_request:
+  push:
+    branches: [main, 'rel/*', 'dev/*']
+  release:
+    types: [published, prereleased]
+  workflow_dispatch:
+
+concurrency:
+  group: equivalence-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
+jobs:
+  equivalence:
+    name: official 1.5.4 vs ClamCove
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            check cmake libbz2-dev libcurl4-openssl-dev libjson-c-dev \
+            libncurses-dev libpcre2-dev libssl-dev libxml2-dev \
+            netcat-openbsd pkg-config python3-pytest zlib1g-dev
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
+          rustup default 1.99.1
+
+      - name: Generate samples
+        run: cargo run --locked --manifest-path ci/equivalence/generator/Cargo.toml -- ci/equivalence/samples
+
+      - name: Compare detection and timing
+        run: ci/equivalence/run.sh --report ci/equivalence/report.md ci/equivalence/samples
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: equivalence-report
+          path: ci/equivalence/report.md
+          if-no-files-found: warn
+          retention-days: 90
+
+  attach-release-report:
+    if: github.event_name == 'release'
+    needs: equivalence
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Attach the report to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.run_id }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh run download "$RUN" --name equivalence-report --dir report
+          gh release upload "$TAG" report/equivalence-report.md --clobber
