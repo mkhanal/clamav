@@ -151,7 +151,7 @@ done
   echo '# ClamCove equivalence report'
   echo
   echo "- ClamAV baseline: $OFFICIAL_VERSION (tarball SHA-256 \`$OFFICIAL_SHA\`)"
-  echo "- ClamCove: \`$(git -C "$REPO" describe --tags --always --dirty)\`"
+  echo "- ClamCove commit: \`$(git -C "$REPO" rev-parse HEAD)\`"
   echo "- Databases: $(cd "$WORK/db" && ls -1 | paste -sd, -)"
   echo "- Runs per sample: $RUNS, interleaved, plus one \`--allmatch\` scan each"
   echo

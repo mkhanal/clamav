@@ -1,8 +1,5 @@
 name: equivalence
 
-# The engine's detection and speed evidence lives with the engine. The File
-# Screener image records the release whose check produced this report in its
-# org.metariki.clamcove.equivalence-check label.
 on:
   pull_request:
   push:
@@ -43,12 +40,36 @@ jobs:
       - name: Compare detection and timing
         run: ci/equivalence/run.sh --report ci/equivalence/report.md ci/equivalence/samples
 
-      - name: Keep the report
+      - name: Record release checksum
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          asset="$TAG.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$asset" \
+            --output "ci/equivalence/$asset"
+          (
+            cd ci/equivalence
+            sha256sum "$asset" > release-checksum.txt
+          )
+          {
+            echo
+            echo '## Release artifact'
+            echo
+            echo "- ClamCove release: \`$TAG\`"
+            echo "- Source tarball: \`$asset\`"
+            echo "- SHA-256: \`$(cut -d ' ' -f 1 ci/equivalence/release-checksum.txt)\`"
+          } >> ci/equivalence/report.md
+
+      - name: Keep the evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: equivalence-report
-          path: ci/equivalence/report.md
+          name: equivalence-evidence
+          path: |
+            ci/equivalence/report.md
+            ci/equivalence/release-checksum.txt
           if-no-files-found: warn
           retention-days: 90
 
@@ -60,11 +81,14 @@ jobs:
       actions: read
       contents: write
     steps:
-      - name: Attach the report to the release
+      - name: Attach the evidence to the release
         env:
           GH_TOKEN: ${{ github.token }}
           RUN: ${{ github.run_id }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh run download "$RUN" --name equivalence-report --dir report
-          gh release upload "$TAG" report/equivalence-report.md --clobber
+          gh run download "$RUN" --name equivalence-evidence --dir evidence
+          mkdir -p upload
+          find evidence -type f -name report.md -exec cp {} upload/equivalence-report.md \;
+          find evidence -type f -name release-checksum.txt -exec cp {} upload/release-checksum.txt \;
+          gh release upload "$TAG" upload/equivalence-report.md upload/release-checksum.txt --clobber
